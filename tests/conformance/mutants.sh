@@ -19,16 +19,17 @@ trap 'cp "$bak" "$src"; rm -f "$bak"' EXIT
 
 # 1 = conformance ran and failed, 0 = passed, 2 = did not compile or could not run
 run_conformance() {
-  if zig build conformance >"$1" 2>&1; then return 0; fi
-  if grep -qE 'compile test .*error|error: [0-9]+ compilation errors|: error: ' "$1"; then return 2; fi
-  grep -qE 'tests? (passed|failed)|[0-9]+ fail' "$1" && return 1
+  local log=$1
+  if zig build conformance >"$log" 2>&1; then return 0; fi
+  if grep -qE 'compile test .*error|error: [0-9]+ compilation errors|: error: ' "$log"; then return 2; fi
+  grep -qE 'tests? (passed|failed)|[0-9]+ fail' "$log" && return 1
   return 2
 }
 
 set +e
 run_conformance "$logs/baseline.log"; rc=$?
 set -e
-if [ "$rc" -ne 0 ]; then
+if [[ "$rc" -ne 0 ]]; then
   echo "baseline conformance does not pass on the unmodified core (see $logs/baseline.log)" >&2
   exit 2
 fi
@@ -70,5 +71,5 @@ for m in "${mutants[@]}"; do
   esac
 done
 echo "mutants: ${#mutants[@]}, killed: $killed, survived: $survived, invalid: $invalid (logs: $logs)"
-[ "$invalid" -eq 0 ] || exit 2
-[ "$survived" -eq 0 ]
+[[ "$invalid" -eq 0 ]] || exit 2
+[[ "$survived" -eq 0 ]]
