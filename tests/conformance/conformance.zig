@@ -29,18 +29,18 @@ fn mcParams(bound: bool) core.Params {
 const Mask = u256;
 
 fn bit(a: core.Action) Mask {
-    const i: u8 = @as(u8, @intFromEnum(a.tag)) * 16 + a.job * 4 + a.worker;
+    const i: u8 = @as(u8, @backingInt(a.tag)) * 16 + a.job * 4 + a.worker;
     return @as(Mask, 1) << i;
 }
 
 fn parseTag(s: []const u8) ?core.Tag {
     const names = .{
-        .{ "Record", core.Tag.record },         .{ "Admit", core.Tag.admit },
-        .{ "Start", core.Tag.start },           .{ "LeaseLapse", core.Tag.lease_lapse },
-        .{ "Checkpoint", core.Tag.checkpoint }, .{ "Accept", core.Tag.accept },
-        .{ "Reject", core.Tag.reject },         .{ "Preempt", core.Tag.preempt },
-        .{ "Hold", core.Tag.hold },             .{ "Release", core.Tag.release },
-        .{ "Drop", core.Tag.drop },             .{ "HostHoldOn", core.Tag.host_hold_on },
+        .{ "Record", core.Tag.record },             .{ "Admit", core.Tag.admit },
+        .{ "Start", core.Tag.start },               .{ "LeaseLapse", core.Tag.lease_lapse },
+        .{ "Checkpoint", core.Tag.checkpoint },     .{ "Accept", core.Tag.accept },
+        .{ "Reject", core.Tag.reject },             .{ "Preempt", core.Tag.preempt },
+        .{ "Hold", core.Tag.hold },                 .{ "Release", core.Tag.release },
+        .{ "Drop", core.Tag.drop },                 .{ "HostHoldOn", core.Tag.host_hold_on },
         .{ "HostHoldOff", core.Tag.host_hold_off },
     };
     inline for (names) |p| if (std.mem.eql(u8, s, p[0])) return p[1];
@@ -134,7 +134,7 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
         }
         var mine: Mask = 0;
         inline for (@typeInfo(core.Tag).@"enum".field_values) |fv| {
-            const tag: core.Tag = @enumFromInt(fv);
+            const tag: core.Tag = @fromBackingInt(@intCast(fv));
             var jx: u8 = 0;
             while (jx < NJ) : (jx += 1) {
                 var w: u8 = 0;
