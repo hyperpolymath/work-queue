@@ -13,11 +13,8 @@ const std = @import("std");
 const core = @import("queue");
 const oracles = @import("oracle");
 
-const NJ = 3;
-const Q = core.Queue(NJ);
-
 // MC.tla constants, j1..j3 in TLC's record order.
-const decl = [NJ]core.Decl{
+const mc_decl = [3]core.Decl{
     .{ .need = 3, .heavy = true, .prio = 1, .ckpt = true, .obl = 1 },
     .{ .need = 2, .heavy = true, .prio = 2, .ckpt = true, .obl = 2 },
     .{ .need = 1, .heavy = false, .prio = 3, .ckpt = false, .obl = 2 },
@@ -29,7 +26,8 @@ fn mcParams(bound: bool) core.Params {
 const Mask = u256;
 
 fn bit(a: core.Action) Mask {
-    const i: u8 = @as(u8, @backingInt(a.tag)) * 16 + a.job * 4 + a.worker;
+    std.debug.assert(a.job < 4 and a.worker < 4);
+    const i: u8 = @as(u8, @backingInt(a.tag)) * 16 + @as(u8, @intCast(a.job * 4 + a.worker));
     return @as(Mask, 1) << i;
 }
 
@@ -47,12 +45,12 @@ fn parseTag(s: []const u8) ?core.Tag {
     return null;
 }
 
-fn idxAfter(s: []const u8, prefix: u8) !u8 {
+fn idxAfter(s: []const u8, prefix: u8) !u32 {
     if (s.len < 2 or s[0] != prefix) return error.BadName;
-    return (try std.fmt.parseInt(u8, s[1..], 10)) - 1;
+    return (try std.fmt.parseInt(u32, s[1..], 10)) - 1;
 }
 
-fn parseState(it: *std.mem.TokenIterator(u8, .scalar)) !Q {
+fn parseState(comptime Q: type, it: *std.mem.TokenIterator(u8, .scalar)) !Q {
     var q = Q{};
     q.host_hold = std.mem.eql(u8, it.next().?, "1");
     for (&q.jobs) |*j| {
@@ -67,7 +65,8 @@ fn parseState(it: *std.mem.TokenIterator(u8, .scalar)) !Q {
     return q;
 }
 
-fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
+fn conform(comptime n: usize, decl: *const [n]core.Decl, oracle: []const u8, params: core.Params, want_states: usize) !void {
+    const Q = core.Queue(n);
     const gpa = std.testing.allocator;
     var states: std.ArrayList(Q) = .empty;
     defer states.deinit(gpa);
@@ -93,7 +92,7 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
         const id = try std.fmt.parseInt(usize, it.next().?, 10);
         if (id == 0 or id > count or seen.isSet(id - 1)) return error.BadStateId;
         seen.set(id - 1);
-        states.items[id - 1] = try parseState(&it);
+        states.items[id - 1] = try parseState(Q, &it);
     }
     // The spec's Init must be exactly a fresh core queue.
     var inits: usize = 0;
@@ -127,7 +126,7 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
         var a = core.Action{ .tag = parseTag(name) orelse return error.UnknownAction };
         if (it.next()) |js| a.job = try idxAfter(js, 'j');
         if (it.next()) |ws| a.worker = try idxAfter(ws, 'w');
-        const got = states.items[from].step(&decl, params, a) orelse {
+        const got = states.items[from].step(decl, params, a) orelse {
             std.debug.print("core refuses {s} at state {d}\n", .{ line, from + 1 });
             return error.MissingTransition;
         };
@@ -141,23 +140,23 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
 
     // Pass 3: no extra moves, and the rules hold everywhere.
     for (states.items, masks.items, 0..) |s, m, i| {
-        if (s.brokenRule(&decl, params)) |rule| {
+        if (s.brokenRule(decl, params)) |rule| {
             std.debug.print("state {d} breaks {s}\n", .{ i + 1, rule });
             return error.RuleBroken;
         }
         var mine: Mask = 0;
         inline for (@typeInfo(core.Tag).@"enum".field_values) |fv| {
             const tag: core.Tag = @fromBackingInt(@intCast(fv));
-            var jx: u8 = 0;
-            while (jx < NJ) : (jx += 1) {
-                var w: u8 = 0;
+            var jx: u32 = 0;
+            while (jx < n) : (jx += 1) {
+                var w: u32 = 0;
                 while (w < params.workers) : (w += 1) {
                     const a = core.Action{
                         .tag = tag,
                         .job = if (tag == .host_hold_on or tag == .host_hold_off) 0 else jx,
                         .worker = if (tag == .start) w else 0,
                     };
-                    if (s.step(&decl, params, a) != null) mine |= bit(a);
+                    if (s.step(decl, params, a) != null) mine |= bit(a);
                 }
             }
         }
@@ -172,9 +171,9 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
 }
 
 test "conforms to the TLC graph, contract as drafted (no reject limit)" {
-    try conform(oracles.drafted, mcParams(false), 70688);
+    try conform(3, &mc_decl, oracles.drafted, mcParams(false), 70688);
 }
 
 test "conforms to the TLC graph, with the reject limit (MVP behaviour)" {
-    try conform(oracles.fix, mcParams(true), 38244);
+    try conform(3, &mc_decl, oracles.fix, mcParams(true), 38244);
 }
