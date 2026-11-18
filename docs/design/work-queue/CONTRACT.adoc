@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+= Job contract and command set — thin draft
+
+Status: sketch for judging alongside the board mock. Nothing here is installed.
+Source basis: the queue design summary, the Atoma handover of 16 Nov, and the
+Headroom pause snapshots. The BotMania relay already enforces most of this by hand;
+this draft names the pieces so they can be checked and later automated.
+
+[[1-what-already-exists-in-practice]]
+=== 1. What already exists in practice
+
+[cols=",",options="header",]
+|===
+|Manual practice today (BotMania relay + handover files) |Name in this contract
+|"Host resource hold received" |`hold` on the host resource
+|"Heavy local work requires a master slot; none granted" |admission gate closed, `slots.master = 0`
+|"record purpose, exact command/cwd, ownership, measured-or-unknown resources, bounded duration, cancellation/checkpoint behaviour, acceptance criteria, then obtain the master's explicit slot" |the admission record, required for `queued -> ready`
+|"One worker by default" |`workers.max = 1` per job
+|HANDOVER-*.md checkpoint sections with exact heads and next command |`checkpoint` artefact
+|"Do not kill or modify any other task's WSL workers" |lease isolation rule
+|"Quiet restart window", "temporary wait" |`preempt` with reason, state `held`
+|headroom-pause `result.json` before/after memory |admission probe measurement
+|===
+
+[[2-job-record]]
+=== 2. Job record
+
+One file per job, plain text, append-only history. TOML shown; JSON equivalent.
+
+[source,toml]
+----
+id          = "2026-11-16-proven-abi-batch"
+title       = "Proven local proof/ABI validation batch"
+category    = "proofing"           # proofing | debt | migration | tidying | finishing | interactive
+priority    = 1                    # 1 urgent .. 4 whenever
+owner       = "chat:01a1b766"      # exactly one; empty means not ready
+repos       = ["hyperpolymath/proven#237"]
+
+[admission]                        # all seven fields required before state = ready
+purpose     = "Replay header RefC + totality locally before merge"
+command     = "scripts/build-header-refc.sh && idris2 --build proven.ipkg"
+cwd         = "/home/hyperpolymath/atoma-consumers-20261116/proven"
+ownership   = "touches proven worktree only; no shared toolchain changes"
+resources   = { ram_gib = 6, cpu = 4, cash = 0.00, quota_pct = 0, measured = false }
+duration    = "40m"                # hard bound; exceeded => preempt + checkpoint
+checkpoint  = "git stash + HANDOVER append; resumable from any point"
+accept      = "totality PASS and header receipt in build/header-evidence"
+
+[limits]                           # enforced, not advisory
+ram_gib_hard = 8                   # cgroup memory.max / Job Object limit
+cpu_hard     = 4
+workers      = 1
+
+[state]
+current     = "ready"
+since       = "2026-11-16T12:41:00Z"
+waiting_on  = "host.ram_available 0.9 GiB < reserve 6 GiB"   # mandatory while not running/done
+lease       = ""                   # worker id + TTL while running
+----
+
+[[3-states-and-transitions]]
+=== 3. States and transitions
+
+....
+queued ──record complete──▶ ready ──gate passes──▶ admitted ──start──▶ running
+  ▲                           │                      │                 │
+  │                           │ hold/preempt         │ release         │ TTL lapse, hold, duration bound
+  └──── drop ◀────────────────┴──────── held ◀───────┴─────────────────┤
+                                                                       ▼
+                        completed ◀── accept ── checkpoint/validate ◀──┘
+                                        │ reject
+                                        └──▶ ready
+....
+
+Rules worth checking formally (small enough for TLA+ or Alloy):
+
+[arabic]
+. At most one lease per job; at most `slots.master` jobs in `running` with `heavy = true`.
+. `waiting_on` is non-empty in every state except `running` and `completed`.
+. A job in `running` whose lease TTL lapses moves to `held` with `waiting_on = "lease expired"`, never silently back to `ready`.
+. Reservation is subtracted from host headroom at `admitted`, not at `running`, and returned on `held`, `completed`, `drop`.
+. Priority may reorder `ready`; it may preempt `running` only if the preempted job has declared `checkpoint`. Category share is a tiebreak inside the same priority, never an override of it. This resolves the priority-versus-share ambiguity in the summary in favour of priority, as BOINC's deadline override does.
+. `resources.measured = false` admits only as a probe under `limits`, and the probe's measurement overwrites `resources` on checkpoint.
+
+[[4-command-set]]
+=== 4. Command set
+
+Verbs only; flags left for later. Each verb appends one line to the job's history.
+
+[cols=",,",options="header",]
+|===
+|Verb |Transition |Side effects
+|`q add "title" --cat proofing --pri 2` |creates `queued` |writes job file, nothing launches
+|`q record <id> --from admission.toml` |`queued -> ready` if all seven fields present |validates, sets `waiting_on`
+|`q gate` |read-only |prints host headroom, slots, budget, and the gate verdict for each `ready` job with its reason
+|`q admit <id> [--probe]` |`ready -> admitted` |reserves RAM/CPU/budget; refuses with reason if gate fails unless `--force` which is logged
+|`q start <id>` |`admitted -> running` |issues lease (worker id, TTL), applies hard limits (cgroup or Job Object), launches `command` in `cwd`
+|`q beat <id>` |none |refreshes lease TTL; equivalent of coord_progress
+|`q checkpoint <id>` |`running -> checkpoint` |runs declared checkpoint, appends HANDOVER section, releases lease, keeps reservation
+|`q hold <id> --reason "..."` |any -> `held` |releases lease and reservation, records reason
+|`q release <id>` |`held -> ready` |re-enters gate
+|`q accept <id>` / `q reject <id>` |`checkpoint -> completed` / `-> ready` |closes or reopens with reason
+|`q host hold --reason` / `q host release` |gate forced closed/open |what BotMania currently says in prose
+|`q board` |read-only |the HTML mock, rendered from job files
+|===
+
+[[5-mapping-to-candidate-implementations]]
+=== 5. Mapping to candidate implementations
+
+[cols=",,,",options="header",]
+|===
+|Need |Linux |Windows |Already in hand
+|hard limits |systemd-run slice, cgroup v2 |Job Objects via PowerShell or a small Zig/C# shim |none
+|queue daemon with groups |pueue (groups = categories, parallel = slots) |pueue runs on Windows |none
+|lease/heartbeat/roles |BoJ coord bus (register, claim, progress, watchdog, master) |same, stdio |tools exist, REST backend not deployed
+|headroom measurement |/proc/meminfo, PSI |Get-Counter as in headroom-pause result.json |script exists
+|checkpoint artefact |HANDOVER-*.md |same |convention exists
+|===
+
+The most elegant route is BoJ coord bus for leases and roles plus pueue for execution and limits, with job files as the only source of truth and the board rendered from them. Most dependable short-term route is job files plus a `q gate` script and no daemon at all, since that is what BotMania does already and it needs no new process on a machine under memory pressure.
+
+[[6-open-questions-for-the-owner]]
+=== 6. Open questions for the owner
+
+* Unit for category shares: wall-clock minutes of a running lease is the simplest and matches BOINC. Memory-GiB-minutes would reflect the actual scarce resource better. Pick one before any share meter is built.
+* Does a cloud session count against a master slot? Proposal: no, it consumes quota only, and gets its own `slots.remote` cap.
+* Who is allowed to `--force` past the gate: owner only, logged.
+
+[[7-beyond-this-repo]]
+=== 7. Beyond this repo
+
+This is personal infrastructure across every repo and both operating systems. Candidate home: dev-notes/decisions plus a small `q` tool under developer/tools. Add to the cross-project list: hard-limit shim for Windows, BoJ REST backend readiness, estate-wide rule that heavy jobs carry an admission record.

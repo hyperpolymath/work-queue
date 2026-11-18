@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Work queue: route to the MVP in three tiers
+:toc: macro
+
+Status: handoff contract, 2026-11-18. Each tier is built in its own session.
+Read `CONTRACT.adoc`, `board-mock.html` and
+`verification/proofs/tlaplus/workqueue/README.adoc` first.
+
+toc::[]
+
+== Ground rules for every tier
+
+* *Spec first.* Any behaviour that changes or adds a state transition goes
+  into `WorkQueue.tla` first, is model-checked by `just wq-oracle`, and only
+  then is coded. Never edit the core to "fix" a conformance failure without
+  showing that the spec agrees.
+* *Green means green.* `just wq-conformance` passes, and `just wq-mutants`
+  keeps 0 survivors. Add a mutant for every new guard you write.
+* *Functional core, imperative shell.* `src/core/queue.zig` stays pure: no
+  clock, no I/O, no allocation. Time, files, processes and HTML live in the
+  shell and reach the core only as actions.
+* *One action per persisted change.* The store is an append-only event log.
+  Current state is the fold of the core's `step` over the log, so every state
+  the tool can ever be in is one the conformance check has covered.
+* Zig 0.17.1. No banned estate languages (no Python, Go, TypeScript, Nix).
+  JSON written by the tool is I-JSON serialised by JCS (RFC 7493, RFC 8785),
+  one record per line in `.jsonl`.
+* No ABI or FFI boundary in the MVP: it is one Zig binary. If one is ever
+  exposed (for example to BoJ), its ABI proofs in Idris2 are mandatory.
+* Report faithfully: an unexecuted check is never a pass.
+
+== Shared interfaces
+
+Tier 1 owns these. Tiers 2 and 3 build against them as written here; a change
+is made in this file first, in the tier 1 PR.
+
+=== Store
+
+`$WQ_HOME`, default `$XDG_STATE_HOME/work-queue` (`~/.local/state/work-queue`):
+
+* `jobs/<id>.toml`: the job record from CONTRACT section 2 (declared facts,
+  owner-edited).
+* `events.jsonl`: append-only. One line per core action:
+  `{"action":"start","at":"<RFC 3339>","job":"<id>","seq":<n>,"worker":"w1"}`.
+  Writers hold an exclusive `flock` on the log for read, check and append.
+* `host.toml`: capacity, heavy slots, probe cap, reject limit, workers, lease
+  TTL and category share targets.
+
+=== CLI: `q`
+
+Every mutating verb is exactly one core action, applied only if the core
+enables it.
+
+[cols="1,1,3",options="header"]
+|===
+|Verb |Core action |Notes
+|`q add <file.toml>` |none |stores the record; the job starts `queued`
+|`q record <id>` |Record |refused until all seven admission fields are set
+|`q gate <id>` |none |read-only: says which guard blocks Admit, in words
+|`q admit <id>` |Admit |
+|`q start <id> --worker <w>` |Start |grants a lease with the host TTL
+|`q beat <id>` |none |extends the lease; refused if no live lease
+|`q tick` |LeaseLapse for each expired lease |also run implicitly by every verb
+|`q checkpoint <id>` |Checkpoint |records the measurement
+|`q accept <id>` / `q reject <id>` |Accept / Reject |
+|`q hold <id>` / `q release <id>` / `q drop <id>` |Hold / Release / Drop |
+|`q host hold` / `q host release` |HostHoldOn / HostHoldOff |
+|`q board [--json\|--html]` |none |read-only view
+|===
+
+Exit codes: `0` done; `3` refused because the action is not enabled, with the
+blocking guard named on stderr; `2` usage error; `1` internal error.
+
+=== Board JSON (`q board --json`, schema `work-queue/board/v1`)
+
+----
+{"categories":[{"name":"proofing","share_target":0.4,"share_used":0.25}],
+ "generated_at":"<RFC 3339>",
+ "host":{"cap":4,"heavy_running":1,"hold":false,"reserved":3,"slots":1,"workers":2},
+ "jobs":[{"category":"proofing","id":"...","lease":{"expires_at":"...","worker":"w1"},
+          "line":"Progress: running on w1, lease 12m left","measured":false,
+          "owner":"chat:...","priority":1,"reason":"none","rejects":0,"res":2,
+          "state":"running","title":"..."}],
+ "schema":"work-queue/board/v1"}
+----
+
+Keys are JCS-sorted. `line` always starts `Waiting:`, `Held by:` or
+`Progress:` (rule R2: every non-running job says why it waits). `lease` is
+`null` unless the job is running.
+
+== Tier 1: ledger and gate
+
+Suggested model: top tier (spec extension and core generalisation are proof
+work).
+
+. Generalise `Queue(comptime n)` to a job table of any size. The conformance
+  test keeps n = 3, and both oracles stay green.
+. Add category shares to the spec as a tie-break among equal priorities.
+  Model-check it, extend the oracle and harness, then code it.
+. Event-log store, `q` CLI and `q board --json` as specified above.
+. Tests: conformance, mutants, plus CLI golden tests replaying an event log.
+
+Done when every verb works end to end on a scratch `$WQ_HOME`, the conformance
+and mutant checks are green, and the board JSON validates against this file.
+
+== Tier 2: launching under limits
+
+Suggested model: Sonnet. Depends on the tier 1 CLI; until that lands, build
+against the verb table above behind a thin interface.
+
+. `q run <id> --worker <w>`: performs `start`, then runs the admission command
+  in its `cwd` under
+  `systemd-run --user --scope --unit wq-<id> -p MemoryMax=<ram> -p CPUQuota=<cpu*100>%`.
+. Heartbeat every TTL/3 with `beat`. Process exit leads to `checkpoint`; the
+  owner or a validator then accepts or rejects.
+. On preempt, hold or lease lapse: SIGTERM, a grace period, then
+  `systemctl --user stop wq-<id>.scope`.
+. A `--limiter none` mode and a `--dry-run` mode that prints the exact argv,
+  for CI and for hosts without a systemd user session.
+. Windows Job Objects: designed, not built.
+
+Evidence: unit tests with a fake limiter in CI. A real cgroup acceptance run
+(a memory hog is killed at `MemoryMax`) needs a Linux host with a systemd
+user session that the owner names. Not The-Titanic while it is memory-starved.
+
+== Tier 3: live board
+
+Suggested model: Sonnet or Haiku. Depends only on the board JSON above, so it
+can use a fixture until tier 1 lands.
+
+. `q board --html` writes one static page from the board JSON, following
+  `board-mock.html`: headroom strip, category share meters with target ticks,
+  seven state columns, and one `Waiting:`/`Held by:`/`Progress:` line per card.
+. `q board --html --watch` regenerates when `events.jsonl` changes; the page
+  carries a meta refresh. No server and no listening port in the MVP.
+. Plain HTML and CSS. Plain JavaScript only if it is needed.
+. Golden tests: fixture JSON in, exact HTML out. One accessibility pass
+  (contrast, headings, no colour-only state).
+
+== Not in the MVP
+
+Cloud workers, spending limits, the BoJ coord-bus bridge, Windows runner,
+`q serve`, multi-host. Each of these is a separate decision for the owner.
