@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Work queue: launching under limits (`q run`)
+:toc: macro
+
+Status: tier 2 design and as-built note. Brief: `TIERS.adoc`, section Tier 2.
+Code: `src/launch/` (plan, supervisor, process side) and the `run` verb in
+`src/cli/main.zig`.
+
+toc::[]
+
+== What `q run` is
+
+`q run <id> --worker <w>` is not a new transition. It is a shell that composes
+four existing core actions, each applied through the same `commit` and guards
+as the manual verbs:
+
+[cols="2,2,3",options="header"]
+|===
+|Moment |Core action |Where
+|launch |`start` (one event, lease granted) |`runJob`, before anything is spawned
+|every TTL/3 |`beat` |`RunStore.beat`
+|the process ends by itself |`checkpoint` |`RunStore.checkpoint`; accept or reject stays with the owner or a validator
+|lease expired (seen by this run, or lapsed by any other verb's tick) |`lease_lapse` (written by `tick`) |`RunStore.beat` / `RunStore.observe`
+|===
+
+`preempt` and `hold` are written by someone else's `q` command; `q run`
+notices them (the job is no longer running on the lease this run took) and
+stops the process. It never writes `preempt`. If the owner interrupts `q run`
+itself (SIGINT or SIGTERM), it stops the process and writes `hold`, an
+existing action, so the board does not show a running job nobody is
+watching; likewise `hold` if the process cannot be launched after `start`.
+Nothing here needs a new transition, so `WorkQueue.tla` and the oracle are
+unchanged.
+
+The lock on `events.jsonl` is held for one read-check-append at a time, never
+while the job runs. A run knows its own lease by the `seq` of the `start`
+event it wrote (`Ledger.lease_seq`), so a job preempted and started again
+elsewhere is not mistaken for this run's lease.
+
+== The command line
+
+[source]
+----
+q run <id> --worker <wN> [--limiter systemd|none] [--grace <dur>] [--dry-run]
+----
+
+`--limiter systemd` (default) wraps the command as
+`systemd-run --user --scope --unit wq-<id> -p MemoryMax=<n>M -p CPUQuota=<n>% -- /bin/sh -c <command>`.
+`MemoryMax` is `resources.ram_gib` exactly, in whole MiB rounded up (the core's
+reservation rounds up to whole GiB; the limit does not). `CPUQuota` is
+`resources.cpu * 100`, rounded up; with no `resources.cpu` no quota is set and
+`--dry-run` says so. `--limiter none` runs `/bin/sh -c <command>` and applies
+no limit; q says so on stderr. `--grace` defaults to 30s.
+
+`--dry-run` opens the store read-only, prints the working directory and the
+argv one JSON-quoted element per line, the beat interval, the stop plan, and
+whether `start` is enabled now (exit 3 if it is not). It needs no systemd and
+writes nothing. Golden-tested in `tests/cli/golden/transcript.txt`.
+
+Exit codes are those of `TIERS.adoc` plus one, additive: *4* means the run
+ended in a way the owner must look at: the process exited non-zero (a
+checkpoint is still recorded), the checkpoint was refused, or q had to stop
+the process because the lease was lost or q was interrupted. `0` only when
+the process exited 0 and the checkpoint was recorded. `1` when the limiter
+cannot be trusted (see below) or the process would not die.
+
+== Untrusted input
+
+A job record is a file anyone who can write the store can write. Its `command`
+and `cwd` are therefore treated as hostile:
+
+* No job field is ever interpolated into a shell string by q. The command is
+  one argv element after `/bin/sh -c`. It is a shell script by design
+  (`CONTRACT.adoc` has `a && b`), so *sh* interprets it, and nothing else does.
+  Running a job record is running code as the owner: write access to the store
+  is as powerful as shell access, and this does not change that.
+* `cwd` is set on the child (`chdir` after fork), never put in a command line.
+  It must be absolute; a relative one is refused because it would resolve
+  against whatever directory q was started in.
+* q builds argv elements itself only from the id (restricted to letters,
+  digits, `-`, `_`, `.`, not starting with `-` or `.`, checked in the ledger
+  and again in `plan.zig`) and from numbers.
+* A NUL byte in command or cwd is refused (argv cannot carry it).
+* Refusals happen before `start` is written, so a refused launch leaves no
+  lease behind.
+
+Unit tests plant `$(…)`, quotes and `;` in the command and assert it comes back
+as the single last argv element, unchanged.
+
+== Stopping a process
+
+On preempt, hold or lease lapse (and on interrupt): SIGTERM to the job's
+process group (it is spawned as its own group, so the signal reaches its
+children and not q), then the grace period, then the force stop:
+
+* `systemd`: `systemctl --user stop wq-<id>.scope`, which also reaches
+  processes that left the group. Not waited for inline, because systemd's own
+  stop timeout is 90s by default; q keeps polling and reports the process
+  stuck 120s after the force stop.
+* `none`: SIGKILL to the process group.
+
+The control loop polls every min(2s, TTL/3): a preempt or hold is seen within
+about two seconds, a beat goes out every TTL/3.
+
+== The Windows runner: design only, not built
+
+A Job Object is the Windows counterpart of the systemd scope. Sketch for the
+owner's later decision (Windows runner is on the "Not in the MVP" list):
+
+* One job object per run, named `wq-<id>`. `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`
+  with `JOB_OBJECT_LIMIT_JOB_MEMORY` (`JobMemoryLimit` = the same MiB figure as
+  `MemoryMax`) and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
+* CPU: `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION` with
+  `JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | _HARD_CAP`; `CpuRate` is in 1/100 of a
+  percent *of the whole machine*, so `cpu * 100 / logical_cpus * 100`, not the
+  `CPUQuota` figure. The conversion needs a unit test on its own.
+* Launch with `CREATE_SUSPENDED`, assign to the job, then resume: the process
+  is never running outside its limits, not even briefly.
+* Heartbeat, checkpoint-on-exit and lease handling are the same supervisor
+  (`supervisor.zig` is OS-independent); only `proc.zig` and the limiter
+  argv change.
+* Stop: there is no SIGTERM. Start the child with `CREATE_NEW_PROCESS_GROUP`,
+  send `CTRL_BREAK_EVENT` for the grace period, then `TerminateJobObject`.
+* `KILL_ON_JOB_CLOSE` closes a hole the Linux side has (next section): if q
+  dies, the job dies with it.
+* The sharp edge is quoting. Windows takes one command-line string, not argv,
+  so the "one argv element" guarantee needs a tested `CommandLineToArgvW`-
+  compatible quoter, or the command must be passed outside the command line
+  (for example through a file or an environment variable read by a fixed
+  `pwsh -NoProfile -File` wrapper). This is where the untrusted-input rule
+  would be easiest to break, and needs its own adversarial tests.
+* WSL: processes inside a WSL distro are Linux processes; a Job Object on
+  `wsl.exe` does not bound them. Inside WSL use `--limiter systemd` only with
+  `systemd=true` in `/etc/wsl.conf` (a user session exists), otherwise
+  `--limiter none` with the WSL VM's own limits in `.wslconfig`.
+
+== Known gaps (not hidden)
+
+* *If q run is SIGKILLed* (or the machine loses power), the process it started
+  keeps running with nobody beating. The lease lapses and the next verb's tick
+  records it, but nothing stops the process. The remedy by hand is
+  `systemctl --user stop wq-<id>.scope`. A fix needs either a supervisor that
+  outlives the shell or `PR_SET_PDEATHSIG`; not done in this tier.
+* *`admission.duration` is not enforced.* The contract says exceeding it
+  means preempt plus checkpoint. The core has no "duration exceeded"
+  transition, and `preempt` is enabled only while a more urgent job is ready,
+  so `q run` cannot do it without a new transition: that is spec work first.
+* *`[limits]` is unused.* The job record's `ram_gib_hard` and `cpu_hard` are
+  not parsed; the limits come from `admission.resources`, as the tier 2 brief
+  words it.
+* *Swap.* `MemoryMax` does not cap swap; `MemorySwapMax=0` would. Not set
+  because it is not in the brief.
+* *Limits that do not bind.* A systemd user manager without memory and cpu
+  delegated accepts the properties and enforces nothing. `q run` reads
+  `cgroup.controllers` of the user manager and refuses to start if either is
+  missing; this check parses correctly in unit tests, but its read of the real
+  file has only been exercised on a host without a user session.
+* *Cost.* Each poll replays the whole log (read-only) and each beat takes the
+  write lock. Fine for hundreds of events; a snapshot or an index is a later
+  question if the log grows large.

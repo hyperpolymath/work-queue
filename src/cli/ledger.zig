@@ -34,6 +34,11 @@ pub const JobRev = struct {
     obligation: []const u8,
     need: u32, // GiB, from admission.resources.ram_gib (0 when absent)
     ckpt: bool, // declares a checkpoint
+    // What `q run` launches; untrusted, passed as argv elements only (src/launch/plan.zig).
+    command: []const u8 = "",
+    cwd: []const u8 = "",
+    ram_gib: f64 = 0, // admission.resources.ram_gib exactly (need is this rounded up)
+    cpu: ?f64 = null, // admission.resources.cpu
     /// The first admission field that is missing, or null when the record
     /// is complete (contract section 2: required before `ready`).
     missing: ?[]const u8,
@@ -103,6 +108,7 @@ pub const Ledger = struct {
     decl: std.ArrayList(core.Decl) = .empty,
     jobs: std.ArrayList(core.Job) = .empty,
     lease_until: std.ArrayList(i64) = .empty, // meaningful while running
+    lease_seq: std.ArrayList(u64) = .empty, // seq of the start event that took the lease; meaningful while running
     host_hold: bool = false,
     seq: u64 = 0,
     obligations: std.ArrayList([]const u8) = .empty,
@@ -175,6 +181,7 @@ pub const Ledger = struct {
                 try l.decl.append(l.arena, try l.declOf(h, r));
                 try l.jobs.append(l.arena, .{});
                 try l.lease_until.append(l.arena, 0);
+                try l.lease_seq.append(l.arena, 0);
             },
             .amend => {
                 const h = l.host.?;
@@ -211,6 +218,7 @@ pub const Ledger = struct {
                     .ok => |e| core.apply(l.jobs.items, &l.host_hold, e),
                 }
                 if (ev.kind == .start or ev.kind == .beat) l.lease_until.items[i] = ev.at + h.ttl;
+                if (ev.kind == .start) l.lease_seq.items[i] = ev.seq;
             },
         }
         l.seq = ev.seq;
@@ -306,6 +314,8 @@ pub fn parseJob(arena: std.mem.Allocator, t: toml.Table, rev: u32, p: *Problem) 
         const s: []const u8 = (try str(adm, k, p)) orelse "";
         if (s.len == 0 and r.missing == null) r.missing = try std.fmt.allocPrint(arena, "admission field {s} is missing", .{k});
     }
+    r.command = (try str(adm, "command", p)) orelse "";
+    r.cwd = (try str(adm, "cwd", p)) orelse "";
     const ck: []const u8 = (try str(adm, "checkpoint", p)) orelse "";
     // The behaviour must be stated; "none" states that there is no checkpoint,
     // so the job cannot be preempted (the spec's Ckpt = FALSE).
@@ -336,6 +346,22 @@ pub fn parseJob(arena: std.mem.Allocator, t: toml.Table, rev: u32, p: *Problem) 
                 return error.BadRecord;
             }
             r.need = @intFromFloat(@ceil(g)); // whole GiB, rounded up
+            r.ram_gib = g;
+            if (rv.table.get("cpu")) |cv| {
+                const cf: f64 = switch (cv) {
+                    .int => |n| @floatFromInt(n),
+                    .float => |f| f,
+                    else => {
+                        p.msg = "admission.resources.cpu";
+                        return error.BadRecord;
+                    },
+                };
+                if (!(cf > 0 and cf <= 4096)) {
+                    p.msg = "admission.resources.cpu (a number > 0)";
+                    return error.BadRecord;
+                }
+                r.cpu = cf;
+            }
         } else if (r.missing == null) r.missing = "admission field resources.ram_gib is missing";
     } else if (r.missing == null) r.missing = "admission field resources is missing";
     return r;

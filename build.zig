@@ -16,12 +16,24 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Unit tests of the functional core and the shell");
     test_step.dependOn(&b.addRunArtifact(unit).step);
 
+    // Launching under limits (tier 2): argv plan, supervisor loop, Linux process side.
+    // Independent of the store and of the core.
+    const launch = b.createModule(.{
+        .root_source_file = b.path("src/launch/launch.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = launch })).step);
+
     // The `q` CLI: the imperative shell around the core.
     const cli = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "queue", .module = queue }},
+        .imports = &.{
+            .{ .name = "queue", .module = queue },
+            .{ .name = "launch", .module = launch },
+        },
     });
     const q = b.addExecutable(.{ .name = "q", .root_module = cli });
     b.installArtifact(q);

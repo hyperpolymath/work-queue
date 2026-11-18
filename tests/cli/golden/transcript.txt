@@ -34,6 +34,8 @@ usage: q <verb> [args]
   q gate <id>                    say which guard blocks admission, in words
   q admit <id>                   ready -> admitted
   q start <id> --worker <wN>     admitted -> running, with a lease of the host TTL
+  q run <id> --worker <wN> [--limiter systemd|none] [--grace <dur>] [--dry-run]
+                                 start, run the job's command under limits, beat, checkpoint at exit
   q beat <id>                    extend the lease to now + TTL
   q tick                         lapse every expired lease
   q checkpoint <id>              running -> checkpoint (measurement recorded)
@@ -108,12 +110,77 @@ $ [2026-11-18T09:02:00Z] q admit proof-a
 $ [2026-11-18T09:02:00Z] q admit proof-b
 q: refused: a job of equal priority from a category further below its share goes first
 [exit 3]
+$ [2026-11-18T09:02:00Z] q run proof-a --worker w1 --dry-run
+q run (dry run): nothing started, nothing written
+job proof-a, worker w1, limiter systemd
+start: enabled now
+cwd: "/home/hyperpolymath/proven"
+argv[0]: "systemd-run"
+argv[1]: "--user"
+argv[2]: "--scope"
+argv[3]: "--unit"
+argv[4]: "wq-proof-a"
+argv[5]: "-p"
+argv[6]: "MemoryMax=6144M"
+argv[7]: "-p"
+argv[8]: "CPUQuota=400%"
+argv[9]: "--"
+argv[10]: "/bin/sh"
+argv[11]: "-c"
+argv[12]: "scripts/build-header-refc.sh && idris2 --build proven.ipkg"
+heartbeat: beat every 300s (lease TTL / 3)
+grace: SIGTERM, then 30s, then force stop: "systemctl" "--user" "stop" "wq-proof-a.scope"
+[exit 0]
+$ [2026-11-18T09:02:00Z] q run proof-b --worker w2 --dry-run --limiter none
+q run (dry run): nothing started, nothing written
+job proof-b, worker w2, limiter none
+start: refused now: the job is not in a state this action starts from
+cwd: "/home/hyperpolymath/proven"
+argv[0]: "/bin/sh"
+argv[1]: "-c"
+argv[2]: "scripts/build-header-refc.sh && idris2 --build proven.ipkg"
+heartbeat: beat every 300s (lease TTL / 3)
+grace: SIGTERM, then 30s, then SIGKILL to the process group
+note: --limiter none applies no memory or cpu limit
+q: refused: start is not enabled: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:02:00Z] q run proof-a --worker w3 --dry-run
+q: refused: no such worker: w3
+[exit 3]
+$ [2026-11-18T09:02:00Z] q run proof-a --worker w1 --limiter bogus
+q: --limiter is systemd or none
+[exit 2]
 $ [2026-11-18T09:02:00Z] q start proof-a --worker w3
 q: refused: no such worker
 [exit 3]
 $ [2026-11-18T09:02:00Z] q start proof-a --worker w1
 16 start proof-a
 [exit 0]
+$ [2026-11-18T09:02:00Z] q run proof-a --worker w2
+q: refused: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:02:00Z] q run proof-a --worker w2 --dry-run
+q run (dry run): nothing started, nothing written
+job proof-a, worker w2, limiter systemd
+start: refused now: the job is not in a state this action starts from
+cwd: "/home/hyperpolymath/proven"
+argv[0]: "systemd-run"
+argv[1]: "--user"
+argv[2]: "--scope"
+argv[3]: "--unit"
+argv[4]: "wq-proof-a"
+argv[5]: "-p"
+argv[6]: "MemoryMax=6144M"
+argv[7]: "-p"
+argv[8]: "CPUQuota=400%"
+argv[9]: "--"
+argv[10]: "/bin/sh"
+argv[11]: "-c"
+argv[12]: "scripts/build-header-refc.sh && idris2 --build proven.ipkg"
+heartbeat: beat every 300s (lease TTL / 3)
+grace: SIGTERM, then 30s, then force stop: "systemctl" "--user" "stop" "wq-proof-a.scope"
+q: refused: start is not enabled: the job is not in a state this action starts from
+[exit 3]
 $ [2026-11-18T09:02:00Z] q start proof-b --worker w2
 q: refused: the job is not in a state this action starts from
 [exit 3]
