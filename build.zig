@@ -17,14 +17,16 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(unit).step);
 
     // Full-graph conformance against the TLC oracle (`just oracle` makes it).
-    const dir = b.option([]const u8, "oracle-dir", "Directory holding oracle-drafted.txt and oracle-fix.txt") orelse
+    const dir = b.option([]const u8, "oracle-dir", "Directory holding oracle-drafted.txt, oracle-fix.txt and oracle-shares.txt") orelse
         ".oracle";
     const wf = b.addWriteFiles();
     _ = wf.addCopyFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "oracle-drafted.txt" }) }, "oracle-drafted.txt");
     _ = wf.addCopyFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "oracle-fix.txt" }) }, "oracle-fix.txt");
+    _ = wf.addCopyFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "oracle-shares.txt" }) }, "oracle-shares.txt");
     const oracle_src = wf.add("oracle.zig",
         \\pub const drafted = @embedFile("oracle-drafted.txt");
         \\pub const fix = @embedFile("oracle-fix.txt");
+        \\pub const shares = @embedFile("oracle-shares.txt");
         \\
     );
     const oracle = b.createModule(.{ .root_source_file = oracle_src });

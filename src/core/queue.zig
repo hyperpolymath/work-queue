@@ -37,13 +37,14 @@ pub const Job = struct {
     rejects: u8 = 0,
 };
 
-/// Per-job declared facts (the TLA+ constants Need, Heavy, Prio, Ckpt, Obl).
+/// Per-job declared facts (the TLA+ constants Need, Heavy, Prio, Ckpt, Obl, Cat).
 pub const Decl = struct {
     need: u32,
     heavy: bool,
     prio: u8, // lower = more urgent
     ckpt: bool,
     obl: u32, // obligation id; two jobs with one obligation never run together
+    cat: u32, // category: an index into Params.weights
 };
 
 pub const Params = struct {
@@ -53,6 +54,8 @@ pub const Params = struct {
     max_rejects: u8,
     use_reject_bound: bool,
     workers: u32,
+    /// Share weight per category (the TLA+ constant Weight); every weight > 0.
+    weights: []const u32,
 };
 
 pub const Tag = enum(u8) {
@@ -87,6 +90,7 @@ pub const Guard = enum(u8) {
     no_fit,
     higher_priority,
     obligation_active,
+    share_behind,
     no_such_worker,
     worker_busy,
     heavy_slots_full,
@@ -104,6 +108,7 @@ pub const Guard = enum(u8) {
             .no_fit => "the job's reservation does not fit in free capacity",
             .higher_priority => "a more urgent ready job fits and goes first",
             .obligation_active => "another job for the same obligation is active",
+            .share_behind => "a job of equal priority from a category further below its share goes first",
             .no_such_worker => "no such worker",
             .worker_busy => "the worker already holds a lease",
             .heavy_slots_full => "every heavy slot is taken",
@@ -153,6 +158,35 @@ fn fits(v: View, d: []const Decl, p: Params, j: usize) bool {
     return sizeFor(v, d, p, j) <= p.cap - r;
 }
 
+/// Reservation held now by the active jobs of category c (the spec's Used).
+pub fn used(v: View, d: []const Decl, c: u32) u64 {
+    var t: u64 = 0;
+    for (v.jobs, 0..) |j, i| {
+        if (d[i].cat == c) t += j.res;
+    }
+    return t;
+}
+
+fn oblBusy(v: View, d: []const Decl, j: usize) bool {
+    for (v.jobs, 0..) |k, ki| {
+        if (ki != j and d[ki].obl == d[j].obl and isActive(k.st)) return true;
+    }
+    return false;
+}
+
+fn eligible(v: View, d: []const Decl, p: Params, k: usize) bool {
+    return v.jobs[k].st == .ready and fits(v, d, p, k) and !oblBusy(v, d, k);
+}
+
+/// Spec ShareFirst(k, j): k has j's priority and its category is further
+/// below its weight. Ratios compared by cross-multiplying, so exactly.
+fn shareFirst(v: View, d: []const Decl, p: Params, k: usize, j: usize) bool {
+    if (d[k].prio != d[j].prio) return false;
+    const uk: u128 = used(v, d, d[k].cat);
+    const uj: u128 = used(v, d, d[j].cat);
+    return uk * p.weights[d[j].cat] < uj * p.weights[d[k].cat];
+}
+
 pub fn heavyRunning(v: View, d: []const Decl) u64 {
     var c: u64 = 0;
     for (v.jobs, 0..) |j, i| {
@@ -190,6 +224,9 @@ pub fn transition(v: View, d: []const Decl, p: Params, a: Action) Outcome {
                 if (ki == j) continue;
                 if (k.st == .ready and d[ki].prio < d[j].prio and fits(v, d, p, ki)) return .{ .refused = .higher_priority };
                 if (d[ki].obl == d[j].obl and isActive(k.st)) return .{ .refused = .obligation_active };
+            }
+            for (0..v.jobs.len) |ki| {
+                if (ki != j and eligible(v, d, p, ki) and shareFirst(v, d, p, ki, j)) return .{ .refused = .share_behind };
             }
             nj.st = .admitted;
             nj.res = sizeFor(v, d, p, j);
@@ -353,8 +390,8 @@ pub fn Queue(comptime n: usize) type {
 
 test "a fresh queue keeps every rule" {
     const Q = Queue(1);
-    const d = [_]Decl{.{ .need = 1, .heavy = false, .prio = 1, .ckpt = false, .obl = 1 }};
-    const p = Params{ .cap = 4, .slots = 1, .probe_cap = 2, .max_rejects = 2, .use_reject_bound = true, .workers = 1 };
+    const d = [_]Decl{.{ .need = 1, .heavy = false, .prio = 1, .ckpt = false, .obl = 1, .cat = 0 }};
+    const p = Params{ .cap = 4, .slots = 1, .probe_cap = 2, .max_rejects = 2, .use_reject_bound = true, .workers = 1, .weights = &.{1} };
     const q = Q{};
     try std.testing.expectEqual(@as(?[]const u8, null), q.brokenRule(&d, p));
     try std.testing.expect(q.step(&d, p, .{ .tag = .admit }) == null);
@@ -369,8 +406,8 @@ test "a job table of runtime size: refusals name the guard" {
     defer gpa.free(jobs);
     @memset(jobs, .{});
     var d: [n]Decl = undefined;
-    for (&d, 0..) |*x, i| x.* = .{ .need = 1, .heavy = false, .prio = @intCast(1 + i % 4), .ckpt = true, .obl = @intCast(i) };
-    const p = Params{ .cap = 3, .slots = 1, .probe_cap = 1, .max_rejects = 2, .use_reject_bound = true, .workers = 2 };
+    for (&d, 0..) |*x, i| x.* = .{ .need = 1, .heavy = false, .prio = @intCast(1 + i % 4), .ckpt = true, .obl = @intCast(i), .cat = @intCast(i % 2) };
+    const p = Params{ .cap = 3, .slots = 1, .probe_cap = 1, .max_rejects = 2, .use_reject_bound = true, .workers = 2, .weights = &.{ 1, 1 } };
     var hh = false;
     for (0..n) |i| apply(jobs, &hh, step(.{ .jobs = jobs, .host_hold = hh }, &d, p, .{ .tag = .record, .job = @intCast(i) }).?);
     const v = View{ .jobs = jobs, .host_hold = hh };

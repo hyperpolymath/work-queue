@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //! Full-graph conformance: the Zig core against every state and every
-//! labelled transition TLC found for MC.tla, under both Safety.cfg (contract
-//! as drafted) and SafetyWithFix.cfg (reject limit on, the MVP behaviour).
+//! labelled transition TLC found for MC.tla, under Safety.cfg (contract as
+//! drafted), SafetyWithFix.cfg (reject limit on, the MVP behaviour) and
+//! SharesSafety.cfg (four jobs of one priority: the category-share tie-break).
 //!   1. For every edge  s --A--> t :  step(s, A) == t
 //!   2. For every state s :  the set of actions the core enables == the set
 //!      of labelled edges leaving s in the graph (so no extra or missing moves)
@@ -15,13 +16,24 @@ const oracles = @import("oracle");
 
 // MC.tla constants, j1..j3 in TLC's record order.
 const mc_decl = [3]core.Decl{
-    .{ .need = 3, .heavy = true, .prio = 1, .ckpt = true, .obl = 1 },
-    .{ .need = 2, .heavy = true, .prio = 2, .ckpt = true, .obl = 2 },
-    .{ .need = 1, .heavy = false, .prio = 3, .ckpt = false, .obl = 2 },
+    .{ .need = 3, .heavy = true, .prio = 1, .ckpt = true, .obl = 1, .cat = 0 },
+    .{ .need = 2, .heavy = true, .prio = 2, .ckpt = true, .obl = 2, .cat = 0 },
+    .{ .need = 1, .heavy = false, .prio = 3, .ckpt = false, .obl = 2, .cat = 1 },
 };
 fn mcParams(bound: bool) core.Params {
-    return .{ .cap = 4, .slots = 1, .probe_cap = 2, .max_rejects = 2, .use_reject_bound = bound, .workers = 2 };
+    return .{ .cap = 4, .slots = 1, .probe_cap = 2, .max_rejects = 2, .use_reject_bound = bound, .workers = 2, .weights = &.{ 1, 1 } };
 }
+
+// MC.tla model 2 (SharesSafety.cfg): four light jobs of one priority; categories
+// a = 0 (j1, j3, weight 2) and b = 1 (j2, j4, weight 1); j1 and j2 share an
+// obligation.
+const sh_decl = [4]core.Decl{
+    .{ .need = 1, .heavy = false, .prio = 1, .ckpt = false, .obl = 1, .cat = 0 },
+    .{ .need = 2, .heavy = false, .prio = 1, .ckpt = false, .obl = 1, .cat = 1 },
+    .{ .need = 1, .heavy = false, .prio = 1, .ckpt = false, .obl = 3, .cat = 0 },
+    .{ .need = 5, .heavy = false, .prio = 1, .ckpt = false, .obl = 4, .cat = 1 },
+};
+const sh_params = core.Params{ .cap = 6, .slots = 1, .probe_cap = 2, .max_rejects = 1, .use_reject_bound = true, .workers = 2, .weights = &.{ 2, 1 } };
 
 const Mask = u256;
 
@@ -176,4 +188,8 @@ test "conforms to the TLC graph, contract as drafted (no reject limit)" {
 
 test "conforms to the TLC graph, with the reject limit (MVP behaviour)" {
     try conform(3, &mc_decl, oracles.fix, mcParams(true), 38244);
+}
+
+test "conforms to the TLC graph of the category-share model" {
+    try conform(4, &sh_decl, oracles.shares, sh_params, 217440);
 }

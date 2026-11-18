@@ -52,6 +52,13 @@ mutants=(
   "drop allowed while running|s/.queued, .ready, .held => {},/.queued, .ready, .held, .running => {},/"
   "beat allowed when not running|/\.beat => {/,/},/s/if (cur.st != .running) return .{ .refused = .wrong_state };//"
   "hold keeps lease|0,/nj.reason = .held_by_owner;/s//nj.reason = .held_by_owner; nj.lease = cur.lease;/"
+  "admit ignores share|s/if (ki != j and eligible(v, d, p, ki) and shareFirst(v, d, p, ki, j)) return .{ .refused = .share_behind };/_ = ki;/"
+  "share ignores weights|s/return uk \* p.weights\[d\[j\].cat\] < uj \* p.weights\[d\[k\].cat\];/_ = p; return uk < uj;/"
+  "share compares non-strictly|s/return uk \* p.weights\[d\[j\].cat\] < uj/return uk * p.weights[d[j].cat] <= uj/"
+  "share ignores priority|s/if (d\[k\].prio != d\[j\].prio) return false;//"
+  "share rival need not be ready|s/return v.jobs\[k\].st == .ready and fits(v, d, p, k) and !oblBusy(v, d, k);/return fits(v, d, p, k) and !oblBusy(v, d, k);/"
+  "share rival need not fit|s/return v.jobs\[k\].st == .ready and fits(v, d, p, k) and !oblBusy(v, d, k);/_ = p; return v.jobs[k].st == .ready and !oblBusy(v, d, k);/"
+  "share rival ignores obligation|s/return v.jobs\[k\].st == .ready and fits(v, d, p, k) and !oblBusy(v, d, k);/return v.jobs[k].st == .ready and fits(v, d, p, k);/"
 )
 
 killed=0 survived=0 invalid=0 i=0

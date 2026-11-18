@@ -766,7 +766,7 @@ lock-sync-fix:
     ./scripts/check-lock-sync.sh
 
 # ── Work queue: spec → oracle → conformance ─────────────────────────────────
-# Model-check the TLA+ spec and rebuild both conformance oracles (needs Java 17+).
+# Model-check the TLA+ spec and rebuild the three conformance oracles (needs Java 17+).
 wq-oracle:
     ./scripts/wq-oracle.sh
 
