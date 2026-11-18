@@ -64,6 +64,7 @@ pub const Tag = enum(u8) {
     drop,
     host_hold_on,
     host_hold_off,
+    beat,
 };
 
 pub const Action = struct {
@@ -217,6 +218,11 @@ pub fn Queue(comptime n: usize) type {
                     nj.st = .dropped;
                     nj.res = 0;
                     nj.reason = .none;
+                },
+                .beat => {
+                    // Heartbeat: the shell extends the lease. No modelled
+                    // state changes; allowed only while running.
+                    if (cur.st != .running) return null;
                 },
                 .host_hold_on, .host_hold_off => unreachable,
             }
