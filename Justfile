@@ -779,7 +779,18 @@ wq-conformance: wq-oracle
 wq-cli:
     zig build
     ./tests/cli/golden.sh
+    ./tests/cli/run.sh
+
+# The real cgroup run (a memory hog killed at MemoryMax). Needs a Linux host with a
+# systemd user session; allocates ~900 MiB. Not part of wq-cli, not for a memory-starved host.
+wq-cgroup:
+    zig build
+    ./tests/cli/cgroup-acceptance.sh
 
 # Plant one rule break at a time; every mutant must be caught.
 wq-mutants: wq-oracle
     ./tests/conformance/mutants.sh
+
+# Plant one break at a time in the q run supervisor loop; every mutant must be caught.
+wq-launch-mutants:
+    ./tests/launch/mutants.sh

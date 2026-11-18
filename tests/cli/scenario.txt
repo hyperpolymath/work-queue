@@ -34,8 +34,16 @@
 2026-11-18T09:01:00Z gate proof-b
 2026-11-18T09:02:00Z admit proof-a
 2026-11-18T09:02:00Z admit proof-b
+# q run, read-only paths: --dry-run prints the exact argv; refusals write nothing.
+2026-11-18T09:02:00Z run proof-a --worker w1 --dry-run
+2026-11-18T09:02:00Z run proof-b --worker w2 --dry-run --limiter none
+2026-11-18T09:02:00Z run proof-a --worker w3 --dry-run
+2026-11-18T09:02:00Z run proof-a --worker w1 --limiter bogus
 2026-11-18T09:02:00Z start proof-a --worker w3
 2026-11-18T09:02:00Z start proof-a --worker w1
+# running already: q run refuses before it writes or launches anything
+2026-11-18T09:02:00Z run proof-a --worker w2
+2026-11-18T09:02:00Z run proof-a --worker w2 --dry-run
 2026-11-18T09:02:00Z start proof-b --worker w2
 2026-11-18T09:03:00Z start debt-c --worker w2
 2026-11-18T09:03:00Z drop debt-c

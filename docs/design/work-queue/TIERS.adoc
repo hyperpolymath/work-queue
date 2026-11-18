@@ -108,6 +108,7 @@ tests.
 |`q gate <id>` |none |read-only: says which guard blocks Admit, in words
 |`q admit <id>` |Admit |
 |`q start <id> --worker <w>` |Start |grants a lease with the host TTL
+|`q run <id> --worker <w>` |Start, Beat, Checkpoint, LeaseLapse |tier 2: no new transition; see `LAUNCH.adoc`. Starts, then runs the admission command under `systemd-run`, beats every TTL/3, checkpoints at exit
 |`q beat <id>` |Beat |durable event; extends the lease to now + TTL. Beat is
 a stutter in the spec (the model has no clock), enabled only while running
 |`q tick` |LeaseLapse for each expired lease |also run implicitly by every verb
@@ -125,6 +126,9 @@ before any job is added (see Store)
 
 Exit codes: `0` done; `3` refused because the action is not enabled, with the
 blocking guard named on stderr; `2` usage error; `1` internal error.
+`q run` adds `4`: the run ended in a way the owner must look at (non-zero exit
+of the job, a refused checkpoint, or a process stopped because the lease was
+lost); see `LAUNCH.adoc`.
 
 === Board JSON (`q board --json`, schema `work-queue/board/v1`)
 
@@ -187,6 +191,10 @@ against the verb table above behind a thin interface.
 . A `--limiter none` mode and a `--dry-run` mode that prints the exact argv,
   for CI and for hosts without a systemd user session.
 . Windows Job Objects: designed, not built.
+
+Status (tier 2 PR): see `LAUNCH.adoc` for what is built, what is only designed
+(Windows Job Objects) and the known gaps. The real cgroup acceptance run is in
+`tests/cli/cgroup-acceptance.sh` and has not been run.
 
 Evidence: unit tests with a fake limiter in CI. A real cgroup acceptance run
 (a memory hog is killed at `MemoryMax`) needs a Linux host with a systemd

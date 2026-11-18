@@ -18,6 +18,7 @@ const toml = @import("toml.zig");
 const time = @import("time.zig");
 const jcs = @import("jcs.zig");
 const ledger = @import("ledger.zig");
+const launch = @import("launch");
 
 const Io = std.Io;
 const Writer = Io.Writer;
@@ -25,9 +26,9 @@ const Ledger = ledger.Ledger;
 const Kind = ledger.Kind;
 const Event = ledger.Event;
 
-const Exit = enum(u8) { done = 0, internal = 1, usage = 2, refused = 3 };
+const Exit = enum(u8) { done = 0, internal = 1, usage = 2, refused = 3, attention = 4 };
 
-const Fail = error{ Usage, Refused, Internal };
+const Fail = error{ Usage, Refused, Internal, Attention };
 
 const Ctx = struct {
     io: Io,
@@ -36,6 +37,8 @@ const Ctx = struct {
     now: i64,
     out: *Writer,
     err: *Writer,
+    /// The words of the last refusal, for callers that report it themselves.
+    last_refusal: []const u8 = "",
 
     fn path(c: *Ctx, parts: []const []const u8) ![]const u8 {
         var all: std.ArrayList([]const u8) = .empty;
@@ -50,6 +53,7 @@ const Ctx = struct {
     }
 
     fn refuse(c: *Ctx, comptime fmt: []const u8, args: anytype) Fail {
+        c.last_refusal = std.fmt.allocPrint(c.arena, fmt, args) catch "";
         c.err.print("q: refused: " ++ fmt ++ "\n", args) catch {};
         return error.Refused;
     }
@@ -388,6 +392,321 @@ fn boardText(c: *Ctx, l: *const Ledger, w: *Writer) !void {
     for (l.ids.items, 0..) |id, i| try w.print("{s}  {t}  {s}\n", .{ id, l.jobs.items[i].st, try statusLine(c, l, i) });
 }
 
+// -------------------------------------------------------------------- run
+//
+// `q run` adds no state transition. It composes `start`, `beat`, `checkpoint`
+// and (through every mutating verb's tick) `lease_lapse`, each applied by
+// `commit` through the core's guards. The log lock is held only for one
+// read-check-append at a time, never while the job runs.
+
+const plan = launch.plan;
+const sup = launch.supervisor;
+
+const RunOpts = struct {
+    id: []const u8,
+    worker: []const u8,
+    limiter: plan.Limiter = .systemd,
+    dry: bool = false,
+    grace_s: i64 = 30,
+};
+
+fn parseRun(c: *Ctx, rest: []const []const u8) Fail!RunOpts {
+    const u = "run <id> --worker <wN> [--limiter systemd|none] [--grace <dur>] [--dry-run]";
+    if (rest.len == 0) return c.usage("{s}", .{u});
+    var o = RunOpts{ .id = rest[0], .worker = "" };
+    var i: usize = 1;
+    while (i < rest.len) : (i += 1) {
+        const a = rest[i];
+        if (std.mem.eql(u8, a, "--dry-run")) {
+            o.dry = true;
+        } else if (i + 1 < rest.len and std.mem.eql(u8, a, "--worker")) {
+            i += 1;
+            o.worker = rest[i];
+        } else if (i + 1 < rest.len and std.mem.eql(u8, a, "--limiter")) {
+            i += 1;
+            o.limiter = std.meta.stringToEnum(plan.Limiter, rest[i]) orelse return c.usage("--limiter is systemd or none", .{});
+        } else if (i + 1 < rest.len and std.mem.eql(u8, a, "--grace")) {
+            i += 1;
+            o.grace_s = time.parseDuration(rest[i]) catch return c.usage("--grace is a duration like 30s or 2m", .{});
+        } else return c.usage("{s}", .{u});
+    }
+    if (o.worker.len == 0) return c.usage("{s}", .{u});
+    return o;
+}
+
+fn specOf(l: *const Ledger, i: u32) plan.Spec {
+    const r = l.revs.items[i];
+    return .{
+        .id = r.id,
+        .command = r.command,
+        .cwd = r.cwd,
+        .ram_mib = plan.ramMib(r.ram_gib),
+        .cpu_pct = if (r.cpu) |x| plan.cpuPercent(x) else null,
+    };
+}
+
+/// Why the job cannot be running on this lease any more, in words.
+fn lostWords(c: *Ctx, l: *const Ledger, i: u32) []const u8 {
+    const j = l.jobs.items[i];
+    const w: []const u8 = switch (j.st) {
+        .ready => if (j.reason == .preempted) "preempted" else "released to ready",
+        .held => switch (j.reason) {
+            .lease_expired => "lease expired",
+            .held_by_owner => "held by owner",
+            else => "held",
+        },
+        .running => "the lease was taken over by another start",
+        .checkpoint => "checkpointed elsewhere",
+        else => @tagName(j.st),
+    };
+    return c.arena.dupe(u8, w) catch w;
+}
+
+const RunEnv = struct {
+    io: Io,
+    mono0: i64,
+    base: i64, // c.now when q run began (WQ_NOW or the clock)
+
+    fn mono(e: *const RunEnv) i64 {
+        return Io.Timestamp.now(e.io, .awake).toMilliseconds();
+    }
+    pub fn nowMs(e: *RunEnv) u64 {
+        return @intCast(@max(0, e.mono() - e.mono0));
+    }
+    pub fn sleepMs(e: *RunEnv, ms: u64) void {
+        e.io.sleep(.fromMilliseconds(@intCast(ms)), .awake) catch {};
+    }
+    pub fn interrupted(_: *RunEnv) bool {
+        return launch.proc.interrupted();
+    }
+    fn secs(e: *const RunEnv) i64 {
+        return e.base + @divFloor(e.mono() - e.mono0, 1000);
+    }
+};
+
+/// The supervisor's view of the queue: one short locked section per call.
+const RunStore = struct {
+    c: *Ctx,
+    env: *RunEnv,
+    id: []const u8,
+    my_seq: u64,
+    store_failed: bool = false,
+
+    fn mine(s: *const RunStore, l: *const Ledger) ?u32 {
+        const i = l.find(s.id) orelse return null;
+        return if (l.jobs.items[i].st == .running and l.lease_seq.items[i] == s.my_seq) i else null;
+    }
+
+    fn lostInternal(s: *RunStore) sup.Lease {
+        s.store_failed = true;
+        return .{ .lost = "q cannot read or replay the store (internal error)" };
+    }
+
+    pub fn observe(s: *RunStore) sup.Lease {
+        var ar = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer ar.deinit();
+        var cc = s.c.*;
+        cc.arena = ar.allocator();
+        cc.now = s.env.secs();
+        var rd = open(&cc, false) catch return s.lostInternal();
+        const i = s.mine(&rd.l);
+        const expired = if (i) |k| cc.now >= rd.l.lease_until.items[k] else false;
+        const words: []const u8 = if (i == null)
+            (if (rd.l.find(s.id)) |k| lostWords(s.c, &rd.l, k) else "the job is gone")
+        else
+            "lease expired";
+        const dup = s.c.arena.dupe(u8, words) catch words;
+        close(&cc, &rd);
+        if (i != null and !expired) return .held;
+        if (expired) { // let the log say so: tick appends the lease_lapse
+            var wr = open(&cc, true) catch return s.lostInternal();
+            defer close(&cc, &wr);
+            tick(&cc, &wr) catch return s.lostInternal();
+            s.c.out.flush() catch {};
+        }
+        return .{ .lost = dup };
+    }
+
+    pub fn beat(s: *RunStore) sup.Lease {
+        var ar = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer ar.deinit();
+        var cc = s.c.*;
+        cc.arena = ar.allocator();
+        cc.now = s.env.secs();
+        var wr = open(&cc, true) catch return s.lostInternal();
+        defer close(&cc, &wr);
+        tick(&cc, &wr) catch return s.lostInternal(); // may lapse this very lease
+        const i = s.mine(&wr.l) orelse {
+            const w = if (wr.l.find(s.id)) |k| lostWords(s.c, &wr.l, k) else "the job is gone";
+            return .{ .lost = s.c.arena.dupe(u8, w) catch w };
+        };
+        defer s.c.out.flush() catch {};
+        commit(&cc, &wr, .{ .kind = .beat, .at = cc.now, .seq = 0, .job = s.id, .rev = wr.l.revs.items[i].rev }, null, null) catch |e| switch (e) {
+            error.Refused => return .{ .lost = s.c.arena.dupe(u8, cc.last_refusal) catch "beat refused" },
+            else => return s.lostInternal(),
+        };
+        return .held;
+    }
+
+    pub fn checkpoint(s: *RunStore) sup.Checkpoint {
+        var ar = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer ar.deinit();
+        var cc = s.c.*;
+        cc.arena = ar.allocator();
+        cc.now = s.env.secs();
+        var wr = open(&cc, true) catch return .{ .refused = "q cannot read or replay the store (internal error)" };
+        defer close(&cc, &wr);
+        defer s.c.out.flush() catch {};
+        tick(&cc, &wr) catch return .{ .refused = "q cannot append to the store (internal error)" };
+        const i = wr.l.find(s.id) orelse return .{ .refused = "the job is gone" };
+        commit(&cc, &wr, .{ .kind = .checkpoint, .at = cc.now, .seq = 0, .job = s.id, .rev = wr.l.revs.items[i].rev }, null, null) catch |e| switch (e) {
+            error.Refused => return .{ .refused = s.c.arena.dupe(u8, cc.last_refusal) catch "checkpoint refused" },
+            else => return .{ .refused = "q cannot append to the store (internal error)" },
+        };
+        return .recorded;
+    }
+};
+
+fn describe(st: sup.Status, buf: []u8) []const u8 {
+    return switch (st) {
+        .exited => |n| std.fmt.bufPrint(buf, "exited with status {d}", .{n}) catch "exited",
+        .signaled => |n| std.fmt.bufPrint(buf, "was killed by signal {d}", .{n}) catch "was killed",
+    };
+}
+
+/// Is the user manager reachable, and are memory and cpu delegated to it?
+/// Without both, systemd-run accepts MemoryMax and CPUQuota and enforces
+/// nothing: the run would look limited and not be. Null means fine.
+fn limiterProblem(c: *Ctx) ?[]const u8 {
+    const uid = std.os.linux.getuid();
+    const p = std.fmt.allocPrint(c.arena, "/sys/fs/cgroup/user.slice/user-{d}.slice/user@{d}.service/cgroup.controllers", .{ uid, uid }) catch return "out of memory";
+    const txt = readFile(c, p) catch
+        return "cannot read the user manager's cgroup.controllers (no systemd user session, or not cgroup v2)";
+    if (!plan.controllersOk(txt))
+        return "memory and cpu are not delegated to the user manager, so MemoryMax and CPUQuota would not be enforced";
+    var ch = std.process.spawn(c.io, .{
+        .argv = &.{ "systemctl", "--user", "show", "--property=Version" },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch return "systemctl is not available";
+    const term = ch.wait(c.io) catch return "systemctl --user did not finish";
+    if (term != .exited or term.exited != 0) return "systemctl --user cannot reach the user manager (no systemd user session)";
+    return null;
+}
+
+fn runJob(c: *Ctx, rest: []const []const u8) Fail!void {
+    const o = try parseRun(c, rest);
+    // Phase 1, read only: everything that can be refused is refused before
+    // `start` is written, so a refusal never leaves a lease behind.
+    var spec: plan.Spec = undefined;
+    var beat_s: i64 = 0;
+    {
+        var s = try open(c, false);
+        defer close(c, &s);
+        const h = s.l.host orelse return c.refuse("no host record yet: run q host amend first", .{});
+        const i = s.l.find(o.id) orelse return c.refuse("no such job: {s}", .{o.id});
+        const w = s.l.workerIndex(o.worker) orelse return c.refuse("no such worker: {s}", .{o.worker});
+        spec = specOf(&s.l, i);
+        beat_s = @max(1, @divFloor(h.ttl, 3));
+        if (plan.problem(spec)) |why| return c.refuse("cannot launch {s}: {s}", .{ o.id, why });
+        const verdict = core.transition(s.l.view(), s.l.decl.items, h.params, .{ .tag = .start, .job = i, .worker = w });
+        if (o.dry) {
+            const note: []const u8 = switch (verdict) {
+                .ok => "enabled now",
+                .refused => |g| std.fmt.allocPrint(c.arena, "refused now: {s}", .{g.words()}) catch "refused now",
+            };
+            plan.dryRun(c.arena, c.out, spec, o.worker, o.limiter, .{ .beat_s = beat_s, .grace_s = o.grace_s }, note) catch return c.internal("cannot write", .{});
+            if (verdict == .refused) return c.refuse("start is not enabled: {s}", .{verdict.refused.words()});
+            return;
+        }
+        if (verdict == .refused) return c.refuse("{s}", .{verdict.refused.words()});
+    }
+    if (comptime !launch.proc.supported) return c.usage("q run is built for Linux only", .{});
+    if (o.limiter == .systemd) {
+        if (limiterProblem(c)) |why| return c.internal("no limits can be enforced here: {s}. Nothing was started. Use --limiter none to run unlimited, or --dry-run to see the argv.", .{why});
+    } else c.err.writeAll("q: --limiter none: no memory or cpu limit is applied\n") catch {};
+    const argv = plan.runArgv(c.arena, spec, o.limiter) catch return c.internal("out of memory", .{});
+    const stop = plan.stopArgv(c.arena, spec) catch return c.internal("out of memory", .{});
+
+    // Phase 2: take the lease (one `start`), then let go of the lock.
+    var my_seq: u64 = 0;
+    var ttl: i64 = 0;
+    {
+        var s = try open(c, true);
+        defer close(c, &s);
+        try tick(c, &s);
+        const i = s.l.find(o.id) orelse return c.refuse("no such job: {s}", .{o.id});
+        try commit(c, &s, .{ .kind = .start, .at = c.now, .seq = 0, .job = o.id, .rev = s.l.revs.items[i].rev, .worker = o.worker }, null, null);
+        my_seq = s.l.seq;
+        ttl = s.l.host.?.ttl;
+    }
+    c.out.flush() catch {};
+
+    // Phase 3: launch and supervise.
+    var proc = launch.proc.Proc.start(c.io, spec, argv, o.limiter, stop) catch |e| {
+        // The lease is ours and nothing runs under it: hold, so the board
+        // does not show a running job with no process.
+        c.err.print("q: could not launch {s}: {t}\n", .{ o.id, e }) catch {};
+        holdAfterFailure(c, o.id);
+        return error.Internal;
+    };
+    launch.proc.catchInterrupts();
+    var env = RunEnv{ .io = c.io, .mono0 = Io.Timestamp.now(c.io, .awake).toMilliseconds(), .base = c.now };
+    var store = RunStore{ .c = c, .env = &env, .id = o.id, .my_seq = my_seq };
+    const beat_ms: u64 = @intCast(@max(1, @divFloor(ttl, 3)) * 1000);
+    const outcome = sup.supervise(&store, &proc, &env, .{
+        .beat_every_ms = beat_ms,
+        .grace_ms = @intCast(o.grace_s * 1000),
+        .poll_ms = @min(2000, beat_ms),
+        .reap_ms = if (o.limiter == .systemd) 120_000 else 10_000,
+    });
+    var nb: [64]u8 = undefined;
+    switch (outcome) {
+        .finished => |f| {
+            c.out.print("q run: {s} {s}\n", .{ o.id, describe(f.status, &nb) }) catch {};
+            switch (f.checkpoint) {
+                .recorded => {
+                    if (f.status.ok()) return;
+                    c.err.print("q: {s} did not exit cleanly; the checkpoint is recorded, and q accept or q reject is the owner's call\n", .{o.id}) catch {};
+                    return error.Attention;
+                },
+                .refused => |why| {
+                    c.err.print("q: the job ended but its checkpoint was refused: {s}\n", .{why}) catch {};
+                    return error.Attention;
+                },
+            }
+        },
+        .stopped => |st| {
+            c.err.print("q: stopped {s}: {s}; SIGTERM, then {s}; it {s}; no checkpoint recorded\n", .{
+                o.id, st.why, if (st.forced) "a forced stop after the grace period" else "it left within the grace period", describe(st.status, &nb),
+            }) catch {};
+            if (st.cause == .interrupted) holdAfterFailure(c, o.id);
+            return error.Attention;
+        },
+        .stuck => |st| {
+            c.err.print("q: {s} is STILL RUNNING after the forced stop ({s}). Stop it by hand: {s}\n", .{
+                o.id, st.why, if (o.limiter == .systemd) "systemctl --user stop wq-<id>.scope" else "kill -9 -- -<pgid of the job>",
+            }) catch {};
+            return error.Internal;
+        },
+    }
+}
+
+/// Record `hold` for a job this run holds a lease on but cannot keep running.
+fn holdAfterFailure(c: *Ctx, id: []const u8) void {
+    var ar = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer ar.deinit();
+    var cc = c.*;
+    cc.arena = ar.allocator();
+    var wr = open(&cc, true) catch return;
+    defer close(&cc, &wr);
+    tick(&cc, &wr) catch return;
+    const i = wr.l.find(id) orelse return;
+    commit(&cc, &wr, .{ .kind = .hold, .at = cc.now, .seq = 0, .job = id, .rev = wr.l.revs.items[i].rev }, null, null) catch {};
+    c.out.flush() catch {};
+}
+
 // ------------------------------------------------------------------ verbs
 
 const usage_text =
@@ -398,6 +717,8 @@ const usage_text =
     \\  q gate <id>                    say which guard blocks admission, in words
     \\  q admit <id>                   ready -> admitted
     \\  q start <id> --worker <wN>     admitted -> running, with a lease of the host TTL
+    \\  q run <id> --worker <wN> [--limiter systemd|none] [--grace <dur>] [--dry-run]
+    \\                                 start, run the job's command under limits, beat, checkpoint at exit
     \\  q beat <id>                    extend the lease to now + TTL
     \\  q tick                         lapse every expired lease
     \\  q checkpoint <id>              running -> checkpoint (measurement recorded)
@@ -443,6 +764,8 @@ fn run(c: *Ctx, args: []const []const u8) Fail!void {
         return;
     }
 
+    if (std.mem.eql(u8, verb, "run")) return runJob(c, rest);
+
     var s = try open(c, true);
     defer close(c, &s);
     try tick(c, &s);
@@ -470,6 +793,7 @@ fn run(c: *Ctx, args: []const []const u8) Fail!void {
         probe.decl = s.l.decl.clone(c.arena) catch return c.internal("out of memory", .{});
         probe.jobs = s.l.jobs.clone(c.arena) catch return c.internal("out of memory", .{});
         probe.lease_until = s.l.lease_until.clone(c.arena) catch return c.internal("out of memory", .{});
+        probe.lease_seq = s.l.lease_seq.clone(c.arena) catch return c.internal("out of memory", .{});
         probe.obligations = s.l.obligations.clone(c.arena) catch return c.internal("out of memory", .{});
         const ev = Event{ .kind = if (is_add) .add else .amend, .at = c.now, .seq = s.l.seq + 1, .job = r.id, .rev = rev };
         if (probe.apply(ev, null, r) catch return c.internal("out of memory", .{})) |why| return c.refuse("{s}", .{why.words});
@@ -547,6 +871,7 @@ fn body(init: std.process.Init, io: Io, arena: std.mem.Allocator, out: *Writer, 
         error.Usage => .usage,
         error.Refused => .refused,
         error.Internal => .internal,
+        error.Attention => .attention,
     };
     return .done;
 }
