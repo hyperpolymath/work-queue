@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MPL-2.0
+id       = "debt-c"
+title    = "Pay down lint debt"
+category = "debt"
+priority = 1
+owner    = "chat:02b2c877"
+heavy    = false
+
+[admission]
+purpose    = "Clear lint warnings"
+command    = "just lint"
+cwd        = "/home/hyperpolymath/proven"
+ownership  = "lint fixes only"
+resources  = { ram_gib = 1.5, cpu = 1, measured = false }
+duration   = "20m"
+checkpoint = ""
+accept     = "lint clean"

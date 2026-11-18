@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: MPL-2.0
+# One q command per line: <WQ_NOW> <args...>. Lines starting with # are skipped.
+# Covers every verb, every exit code, and the refusals that name a guard.
+# At 09:01 debt-c is held back by the share tie-break: tidy-e (debt) holds a
+# probe and proofing holds nothing, so the equal-priority proofing jobs go first.
+2026-11-18T09:00:00Z board
+2026-11-18T09:00:00Z add @/proof-a.toml
+2026-11-18T09:00:00Z host amend @/host.toml
+2026-11-18T09:00:00Z add @/proof-a.toml
+2026-11-18T09:00:00Z add @/proof-a.toml
+2026-11-18T09:00:00Z add @/proof-b.toml
+2026-11-18T09:00:00Z add @/debt-c.toml
+2026-11-18T09:00:00Z add @/debt-d.toml
+2026-11-18T09:00:00Z add @/tidy-e.toml
+2026-11-18T09:00:00Z frobnicate
+2026-11-18T09:00:00Z start proof-a
+2026-11-18T09:00:00Z record nosuch
+2026-11-18T09:00:00Z record tidy-e
+2026-11-18T09:00:00Z admit tidy-e
+2026-11-18T09:00:00Z start tidy-e --worker w2
+2026-11-18T09:00:00Z preempt tidy-e
+2026-11-18T09:00:00Z record debt-c
+2026-11-18T09:00:00Z amend debt-c @/debt-c-r2.toml
+2026-11-18T09:00:00Z record debt-c
+2026-11-18T09:00:00Z record debt-d
+2026-11-18T09:01:00Z record proof-a
+2026-11-18T09:01:00Z record proof-b
+2026-11-18T09:01:00Z gate debt-c
+2026-11-18T09:01:00Z gate proof-b
+2026-11-18T09:01:00Z admit debt-c
+2026-11-18T09:01:00Z preempt tidy-e
+2026-11-18T09:01:00Z gate tidy-e
+2026-11-18T09:01:00Z start tidy-e --worker w2
+2026-11-18T09:01:00Z gate proof-b
+2026-11-18T09:02:00Z admit proof-a
+2026-11-18T09:02:00Z admit proof-b
+2026-11-18T09:02:00Z start proof-a --worker w3
+2026-11-18T09:02:00Z start proof-a --worker w1
+2026-11-18T09:02:00Z start proof-b --worker w2
+2026-11-18T09:03:00Z start debt-c --worker w2
+2026-11-18T09:03:00Z drop debt-c
+2026-11-18T09:10:00Z beat proof-a
+2026-11-18T09:20:00Z board
+2026-11-18T09:20:00Z board --json
+2026-11-18T09:24:00Z tick
+2026-11-18T09:25:00Z checkpoint debt-c
+2026-11-18T09:30:00Z tick
+2026-11-18T09:30:00Z admit proof-b
+2026-11-18T09:30:00Z start proof-b --worker w2
+2026-11-18T09:30:00Z checkpoint proof-b
+2026-11-18T09:30:00Z accept proof-b
+2026-11-18T09:30:00Z gate proof-a
+2026-11-18T09:30:00Z release proof-a
+2026-11-18T09:31:00Z host hold
+2026-11-18T09:31:00Z admit proof-a
+2026-11-18T09:31:00Z host amend @/host.toml
+2026-11-18T09:31:00Z host release
+2026-11-18T09:32:00Z admit proof-a
+2026-11-18T09:32:00Z start proof-a --worker w1
+2026-11-18T09:33:00Z checkpoint proof-a
+2026-11-18T09:33:00Z reject proof-a
+2026-11-18T09:34:00Z admit proof-a
+2026-11-18T09:34:00Z start proof-a --worker w1
+2026-11-18T09:35:00Z checkpoint proof-a
+2026-11-18T09:35:00Z reject proof-a
+2026-11-18T09:35:00Z release proof-a
+2026-11-18T09:36:00Z hold tidy-e
+2026-11-18T09:36:00Z release tidy-e
+2026-11-18T09:36:00Z amend proof-b @/proof-b.toml
+2026-11-18T09:36:00Z drop debt-d
+2026-11-18T09:36:00Z amend debt-d @/debt-d-r2.toml
+2026-11-18T09:36:00Z admit tidy-e
+2026-11-18T09:36:00Z start tidy-e --worker w1
+2026-11-18T09:50:00Z board
+2026-11-18T09:52:00Z tick
+2026-11-18T09:52:00Z board
+2026-11-18T09:52:00Z board --json
+2026-11-18T09:52:00Z board --html

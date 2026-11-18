@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MPL-2.0
+# Host record: capacity and probe in GiB; shares are integer weights.
+capacity_gib = 8
+heavy_slots  = 1
+probe_gib    = 2
+reject_limit = 2
+workers      = 2
+lease_ttl    = "15m"
+
+[shares]
+proofing = 2
+debt     = 1

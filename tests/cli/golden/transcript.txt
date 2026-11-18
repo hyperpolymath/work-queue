@@ -1,0 +1,250 @@
+$ [2026-11-18T09:00:00Z] q board
+q: refused: no host record yet: run q host amend first
+[exit 3]
+$ [2026-11-18T09:00:00Z] q add @/proof-a.toml
+q: refused: no host record yet: run q host amend first
+[exit 3]
+$ [2026-11-18T09:00:00Z] q host amend @/host.toml
+1 host_amend
+[exit 0]
+$ [2026-11-18T09:00:00Z] q add @/proof-a.toml
+2 add proof-a
+[exit 0]
+$ [2026-11-18T09:00:00Z] q add @/proof-a.toml
+q: refused: a job with this id already exists
+[exit 3]
+$ [2026-11-18T09:00:00Z] q add @/proof-b.toml
+3 add proof-b
+[exit 0]
+$ [2026-11-18T09:00:00Z] q add @/debt-c.toml
+4 add debt-c
+[exit 0]
+$ [2026-11-18T09:00:00Z] q add @/debt-d.toml
+5 add debt-d
+[exit 0]
+$ [2026-11-18T09:00:00Z] q add @/tidy-e.toml
+6 add tidy-e
+[exit 0]
+$ [2026-11-18T09:00:00Z] q frobnicate
+q: unknown verb frobnicate
+usage: q <verb> [args]
+  q add <file.toml>              store revision 1 of a new job (queued)
+  q amend <id> <file.toml>       new job revision (only while queued or dropped)
+  q record <id>                  queued -> ready, once the admission record is complete
+  q gate <id>                    say which guard blocks admission, in words
+  q admit <id>                   ready -> admitted
+  q start <id> --worker <wN>     admitted -> running, with a lease of the host TTL
+  q beat <id>                    extend the lease to now + TTL
+  q tick                         lapse every expired lease
+  q checkpoint <id>              running -> checkpoint (measurement recorded)
+  q accept <id> | q reject <id>  checkpoint -> completed | ready (or held at the reject limit)
+  q preempt <id>                 running -> ready, for a more urgent ready job
+  q hold <id> | q release <id> | q drop <id>
+  q host amend <file.toml>       new host revision
+  q host hold | q host release   close or reopen the gate for every job
+  q board [--json]               the board, as text or as work-queue/board/v1 JSON
+
+[exit 2]
+$ [2026-11-18T09:00:00Z] q start proof-a
+q: start <id> --worker <wN>
+[exit 2]
+$ [2026-11-18T09:00:00Z] q record nosuch
+q: refused: no such job: nosuch
+[exit 3]
+$ [2026-11-18T09:00:00Z] q record tidy-e
+7 record tidy-e
+[exit 0]
+$ [2026-11-18T09:00:00Z] q admit tidy-e
+8 admit tidy-e
+[exit 0]
+$ [2026-11-18T09:00:00Z] q start tidy-e --worker w2
+9 start tidy-e
+[exit 0]
+$ [2026-11-18T09:00:00Z] q preempt tidy-e
+q: refused: no more urgent job is ready
+[exit 3]
+$ [2026-11-18T09:00:00Z] q record debt-c
+q: refused: admission field checkpoint is missing
+[exit 3]
+$ [2026-11-18T09:00:00Z] q amend debt-c @/debt-c-r2.toml
+10 amend debt-c
+[exit 0]
+$ [2026-11-18T09:00:00Z] q record debt-c
+11 record debt-c
+[exit 0]
+$ [2026-11-18T09:00:00Z] q record debt-d
+q: refused: the owner is empty
+[exit 3]
+$ [2026-11-18T09:01:00Z] q record proof-a
+12 record proof-a
+[exit 0]
+$ [2026-11-18T09:01:00Z] q record proof-b
+13 record proof-b
+[exit 0]
+$ [2026-11-18T09:01:00Z] q gate debt-c
+debt-c  ready  Waiting: a job of equal priority from a category further below its share goes first
+[exit 0]
+$ [2026-11-18T09:01:00Z] q gate proof-b
+proof-b  ready  Waiting: the gate is open; q admit admits it
+[exit 0]
+$ [2026-11-18T09:01:00Z] q admit debt-c
+q: refused: a job of equal priority from a category further below its share goes first
+[exit 3]
+$ [2026-11-18T09:01:00Z] q preempt tidy-e
+14 preempt tidy-e
+[exit 0]
+$ [2026-11-18T09:01:00Z] q gate tidy-e
+tidy-e  ready  Waiting: a more urgent ready job fits and goes first
+[exit 0]
+$ [2026-11-18T09:01:00Z] q start tidy-e --worker w2
+q: refused: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:01:00Z] q gate proof-b
+proof-b  ready  Waiting: the gate is open; q admit admits it
+[exit 0]
+$ [2026-11-18T09:02:00Z] q admit proof-a
+15 admit proof-a
+[exit 0]
+$ [2026-11-18T09:02:00Z] q admit proof-b
+q: refused: a job of equal priority from a category further below its share goes first
+[exit 3]
+$ [2026-11-18T09:02:00Z] q start proof-a --worker w3
+q: refused: no such worker
+[exit 3]
+$ [2026-11-18T09:02:00Z] q start proof-a --worker w1
+16 start proof-a
+[exit 0]
+$ [2026-11-18T09:02:00Z] q start proof-b --worker w2
+q: refused: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:03:00Z] q start debt-c --worker w2
+q: refused: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:03:00Z] q drop debt-c
+17 drop debt-c
+[exit 0]
+$ [2026-11-18T09:10:00Z] q beat proof-a
+18 beat proof-a
+[exit 0]
+$ [2026-11-18T09:20:00Z] q board
+host rev 1: reserved 2/8 GiB, heavy 1/1, workers 2
+proof-a  running  Progress: running on w1, lease 5m left
+proof-b  ready  Waiting: the gate is open; q admit admits it
+debt-c  dropped  Progress: dropped
+debt-d  queued  Waiting: admission record incomplete: the owner is empty
+tidy-e  ready  Waiting: a more urgent ready job fits and goes first
+[exit 0]
+$ [2026-11-18T09:20:00Z] q board --json
+{"categories":[{"name":"debt","share_target":0.3333333333333333,"share_used":0},{"name":"proofing","share_target":0.6666666666666666,"share_used":1}],"generated_at":"2026-11-18T09:20:00Z","host":{"cap":8,"heavy_running":1,"hold":false,"reserved":2,"slots":1,"workers":2},"jobs":[{"category":"debt","id":"debt-c","lease":null,"line":"Progress: dropped","measured":false,"owner":"chat:02b2c877","priority":1,"reason":"none","rejects":0,"res":0,"state":"dropped","title":"Pay down lint debt"},{"category":"debt","id":"debt-d","lease":null,"line":"Waiting: admission record incomplete: the owner is empty","measured":false,"owner":"","priority":2,"reason":"no record","rejects":0,"res":0,"state":"queued","title":"Incomplete record"},{"category":"proofing","id":"proof-a","lease":{"expires_at":"2026-11-18T09:25:00Z","worker":"w1"},"line":"Progress: running on w1, lease 5m left","measured":false,"owner":"chat:01a1b766","priority":1,"reason":"none","rejects":0,"res":2,"state":"running","title":"Replay header RefC + totality"},{"category":"proofing","id":"proof-b","lease":null,"line":"Waiting: the gate is open; q admit admits it","measured":false,"owner":"chat:01a1b766","priority":1,"reason":"gate","rejects":0,"res":0,"state":"ready","title":"Second proof batch"},{"category":"debt","id":"tidy-e","lease":null,"line":"Waiting: a more urgent ready job fits and goes first","measured":false,"owner":"chat:04","priority":3,"reason":"preempted","rejects":0,"res":0,"state":"ready","title":"Tidy generated docs"}],"schema":"work-queue/board/v1"}
+[exit 0]
+$ [2026-11-18T09:24:00Z] q tick
+[exit 0]
+$ [2026-11-18T09:25:00Z] q checkpoint debt-c
+19 lease_lapse proof-a
+q: refused: the job is not in a state this action starts from
+[exit 3]
+$ [2026-11-18T09:30:00Z] q tick
+[exit 0]
+$ [2026-11-18T09:30:00Z] q admit proof-b
+20 admit proof-b
+[exit 0]
+$ [2026-11-18T09:30:00Z] q start proof-b --worker w2
+21 start proof-b
+[exit 0]
+$ [2026-11-18T09:30:00Z] q checkpoint proof-b
+22 checkpoint proof-b
+[exit 0]
+$ [2026-11-18T09:30:00Z] q accept proof-b
+23 accept proof-b
+[exit 0]
+$ [2026-11-18T09:30:00Z] q gate proof-a
+proof-a  held  Held by: lease expired; q release returns it to the gate
+[exit 0]
+$ [2026-11-18T09:30:00Z] q release proof-a
+24 release proof-a
+[exit 0]
+$ [2026-11-18T09:31:00Z] q host hold
+25 host_hold
+[exit 0]
+$ [2026-11-18T09:31:00Z] q admit proof-a
+q: refused: the host is held
+[exit 3]
+$ [2026-11-18T09:31:00Z] q host amend @/host.toml
+q: refused: host amend is refused while any job is past queued and not finished: revisions are not in the spec yet
+[exit 3]
+$ [2026-11-18T09:31:00Z] q host release
+26 host_release
+[exit 0]
+$ [2026-11-18T09:32:00Z] q admit proof-a
+27 admit proof-a
+[exit 0]
+$ [2026-11-18T09:32:00Z] q start proof-a --worker w1
+28 start proof-a
+[exit 0]
+$ [2026-11-18T09:33:00Z] q checkpoint proof-a
+29 checkpoint proof-a
+[exit 0]
+$ [2026-11-18T09:33:00Z] q reject proof-a
+30 reject proof-a
+[exit 0]
+$ [2026-11-18T09:34:00Z] q admit proof-a
+31 admit proof-a
+[exit 0]
+$ [2026-11-18T09:34:00Z] q start proof-a --worker w1
+32 start proof-a
+[exit 0]
+$ [2026-11-18T09:35:00Z] q checkpoint proof-a
+33 checkpoint proof-a
+[exit 0]
+$ [2026-11-18T09:35:00Z] q reject proof-a
+34 reject proof-a
+[exit 0]
+$ [2026-11-18T09:35:00Z] q release proof-a
+q: refused: the job hit the reject limit and needs an owner edit
+[exit 3]
+$ [2026-11-18T09:36:00Z] q hold tidy-e
+35 hold tidy-e
+[exit 0]
+$ [2026-11-18T09:36:00Z] q release tidy-e
+36 release tidy-e
+[exit 0]
+$ [2026-11-18T09:36:00Z] q amend proof-b @/proof-b.toml
+q: refused: amend is refused unless the job is queued or dropped: revisions are not in the spec yet
+[exit 3]
+$ [2026-11-18T09:36:00Z] q drop debt-d
+37 drop debt-d
+[exit 0]
+$ [2026-11-18T09:36:00Z] q amend debt-d @/debt-d-r2.toml
+38 amend debt-d
+[exit 0]
+$ [2026-11-18T09:36:00Z] q admit tidy-e
+39 admit tidy-e
+[exit 0]
+$ [2026-11-18T09:36:00Z] q start tidy-e --worker w1
+40 start tidy-e
+[exit 0]
+$ [2026-11-18T09:50:00Z] q board
+host rev 1: reserved 2/8 GiB, heavy 0/1, workers 2
+proof-a  held  Held by: reject limit; needs an owner edit
+proof-b  completed  Progress: completed
+debt-c  dropped  Progress: dropped
+debt-d  dropped  Progress: dropped
+tidy-e  running  Progress: running on w1, lease 1m left
+[exit 0]
+$ [2026-11-18T09:52:00Z] q tick
+41 lease_lapse tidy-e
+[exit 0]
+$ [2026-11-18T09:52:00Z] q board
+host rev 1: reserved 0/8 GiB, heavy 0/1, workers 2
+proof-a  held  Held by: reject limit; needs an owner edit
+proof-b  completed  Progress: completed
+debt-c  dropped  Progress: dropped
+debt-d  dropped  Progress: dropped
+tidy-e  held  Held by: lease expired; q release returns it to the gate
+[exit 0]
+$ [2026-11-18T09:52:00Z] q board --json
+{"categories":[{"name":"debt","share_target":0.3333333333333333,"share_used":0},{"name":"proofing","share_target":0.6666666666666666,"share_used":0}],"generated_at":"2026-11-18T09:52:00Z","host":{"cap":8,"heavy_running":0,"hold":false,"reserved":0,"slots":1,"workers":2},"jobs":[{"category":"debt","id":"debt-c","lease":null,"line":"Progress: dropped","measured":false,"owner":"chat:02b2c877","priority":1,"reason":"none","rejects":0,"res":0,"state":"dropped","title":"Pay down lint debt"},{"category":"debt","id":"debt-d","lease":null,"line":"Progress: dropped","measured":false,"owner":"chat:03","priority":2,"reason":"none","rejects":0,"res":0,"state":"dropped","title":"Incomplete record"},{"category":"proofing","id":"proof-a","lease":null,"line":"Held by: reject limit; needs an owner edit","measured":true,"owner":"chat:01a1b766","priority":1,"reason":"reject limit","rejects":2,"res":0,"state":"held","title":"Replay header RefC + totality"},{"category":"proofing","id":"proof-b","lease":null,"line":"Progress: completed","measured":true,"owner":"chat:01a1b766","priority":1,"reason":"none","rejects":0,"res":0,"state":"completed","title":"Second proof batch"},{"category":"debt","id":"tidy-e","lease":null,"line":"Held by: lease expired; q release returns it to the gate","measured":false,"owner":"chat:04","priority":3,"reason":"lease expired","rejects":0,"res":0,"state":"held","title":"Tidy generated docs"}],"schema":"work-queue/board/v1"}
+[exit 0]
+$ [2026-11-18T09:52:00Z] q board --html
+q: board --html is tier 3 and not built yet
+[exit 2]

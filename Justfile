@@ -775,6 +775,11 @@ wq-conformance: wq-oracle
     zig build test
     zig build conformance --summary all
 
+# Build q and replay the CLI golden scenario on a scratch $WQ_HOME.
+wq-cli:
+    zig build
+    ./tests/cli/golden.sh
+
 # Plant one rule break at a time; every mutant must be caught.
 wq-mutants: wq-oracle
     ./tests/conformance/mutants.sh

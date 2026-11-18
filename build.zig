@@ -13,8 +13,19 @@ pub fn build(b: *std.Build) void {
     });
 
     const unit = b.addTest(.{ .root_module = queue });
-    const test_step = b.step("test", "Unit tests of the functional core");
+    const test_step = b.step("test", "Unit tests of the functional core and the shell");
     test_step.dependOn(&b.addRunArtifact(unit).step);
+
+    // The `q` CLI: the imperative shell around the core.
+    const cli = b.createModule(.{
+        .root_source_file = b.path("src/cli/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "queue", .module = queue }},
+    });
+    const q = b.addExecutable(.{ .name = "q", .root_module = cli });
+    b.installArtifact(q);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cli })).step);
 
     // Full-graph conformance against the TLC oracle (`just oracle` makes it).
     const dir = b.option([]const u8, "oracle-dir", "Directory holding oracle-drafted.txt, oracle-fix.txt and oracle-shares.txt") orelse

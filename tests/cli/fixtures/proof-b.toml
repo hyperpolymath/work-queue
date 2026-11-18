@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MPL-2.0
+id       = "proof-b"
+title    = "Second proof batch"
+category = "proofing"
+priority = 1
+owner    = "chat:01a1b766"
+repos    = ["hyperpolymath/proven#237"]
+
+[admission]
+purpose    = "Replay header RefC + totality locally before merge"
+command    = "scripts/build-header-refc.sh && idris2 --build proven.ipkg"
+cwd        = "/home/hyperpolymath/proven"
+ownership  = "touches proven worktree only"
+resources  = { ram_gib = 2, cpu = 4, cash = 0.00, quota_pct = 0, measured = false }
+duration   = "40m"
+checkpoint = "git stash + HANDOVER append"
+accept     = "totality PASS and header receipt"
