@@ -38,11 +38,11 @@ pub const Proc = struct {
     }
 
     fn reap(pid: i32) ?u32 {
-        var st: u32 = 0;
+        var raw: i32 = 0; // waitpid's own type: no pointer cast needed
         while (true) {
-            const rc = linux.waitpid(pid, @ptrCast(&st), linux.W.NOHANG);
+            const rc = linux.waitpid(pid, &raw, linux.W.NOHANG);
             switch (linux.errno(rc)) {
-                .SUCCESS => return if (rc == 0) null else st,
+                .SUCCESS => return if (rc == 0) null else @as(u32, @bitCast(raw)),
                 .INTR => continue,
                 else => return 0, // ECHILD: already gone; report a clean 0 exit
             }
