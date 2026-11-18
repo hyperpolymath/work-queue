@@ -1,0 +1,119 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk> -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Work Queue Board</title>
+<style>
+:root{
+  --bg:#f6f5f1;--panel:#ffffff;--ink:#1d1d1b;--muted:#6b6a66;--line:#dcdad3;
+  --queued:#8a8a85;--ready:#2f6fb3;--admitted:#7a4fb5;--running:#1f8a5a;--checkpoint:#c47f14;--held:#b3362f;--done:#4b4b48;
+  --meter:#2f6fb3;--meter-bg:#e6e4dd;--warn:#b3362f;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17171a;--panel:#222226;--ink:#ecebe6;--muted:#a0a09a;--line:#38383e;--meter-bg:#2e2e34;}}
+:root[data-theme="dark"]{--bg:#17171a;--panel:#222226;--ink:#ecebe6;--muted:#a0a09a;--line:#38383e;--meter-bg:#2e2e34;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;padding:16px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 16px;font-size:13px}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.tile b{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.tile span{font-size:18px}
+.tile.warn span{color:var(--warn)}
+.capture{display:flex;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:16px}
+.capture input[type=text]{flex:1 1 240px;padding:8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}
+.capture select,.capture button{padding:8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}
+.capture button{cursor:pointer}
+.hint{flex-basis:100%;font-size:12px;color:var(--muted);margin:0}
+.shares{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:16px}
+.shares h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:500}
+.share{display:grid;grid-template-columns:170px 1fr 90px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar{height:8px;background:var(--meter-bg);border-radius:4px;position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--meter);opacity:.9}
+.bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.6}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:120px}
+.col h2{font-size:13px;margin:0 0 8px;display:flex;justify-content:space-between;font-weight:600}
+.col h2 small{color:var(--muted);font-weight:400}
+.card{border:1px solid var(--line);border-left:4px solid var(--c);border-radius:6px;padding:8px;margin-bottom:8px;font-size:13px}
+.card .t{font-weight:600;margin-bottom:2px}
+.card .m{color:var(--muted);font-size:12px}
+.card .why{margin-top:6px;padding:4px 6px;border-radius:4px;background:var(--meter-bg);font-size:12px}
+.card .acts{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+.card .acts button{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);cursor:pointer}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);margin-right:4px}
+.q{--c:var(--queued)}.r{--c:var(--ready)}.a{--c:var(--admitted)}.g{--c:var(--running)}.k{--c:var(--checkpoint)}.h{--c:var(--held)}.d{--c:var(--done)}
+footer{margin-top:16px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<h1>Work Queue Board <small style="font-weight:400;color:var(--muted)">draft sketch, sample data</small></h1>
+<p class="sub">One place to drop an idea, one place to see why anything is waiting. Numbers below are illustrative, drawn from real snapshots on 16 Nov.</p>
+
+<div class="strip">
+  <div class="tile warn"><b>Host available RAM</b><span>0.9 GiB</span></div>
+  <div class="tile warn"><b>Committed</b><span>30.9 / 62.6 GiB</span></div>
+  <div class="tile"><b>Pages per second</b><span>742</span></div>
+  <div class="tile"><b>Master slots</b><span>0 of 1 free</span></div>
+  <div class="tile"><b>Budget reserved today</b><span>£0.00 cash · 38% quota</span></div>
+  <div class="tile"><b>Admission gate</b><span>REJECTING</span></div>
+</div>
+
+<form class="capture" onsubmit="return false">
+  <input type="text" placeholder="Capture an idea in one line. It lands as queued, nothing starts.">
+  <select><option>Proofing and solving</option><option>Technical debt</option><option>Migration</option><option>Tidying</option><option>Finishing repositories</option><option>Interactive</option></select>
+  <select><option>P3 normal</option><option>P1 urgent</option><option>P2 soon</option><option>P4 whenever</option></select>
+  <button>Capture</button>
+  <p class="hint">Capture never launches a worker. A job only becomes <em>ready</em> once it carries the admission record: command, cwd, ownership, resources measured or unknown, duration bound, checkpoint behaviour, acceptance criteria.</p>
+</form>
+
+<div class="shares">
+  <h2>Category shares, trailing 7 days · bar = used, tick = target · unused share lends to others</h2>
+  <div class="share"><span>Proofing and solving</span><div class="bar"><i style="width:44%"></i><u style="left:30%"></u></div><span>44% of 30%</span></div>
+  <div class="share"><span>Finishing repositories</span><div class="bar"><i style="width:21%"></i><u style="left:15%"></u></div><span>21% of 15%</span></div>
+  <div class="share"><span>Interactive and reserve</span><div class="bar"><i style="width:28%"></i><u style="left:25%"></u></div><span>28% of 25%</span></div>
+  <div class="share"><span>Technical debt</span><div class="bar"><i style="width:4%"></i><u style="left:10%"></u></div><span>4% of 10%</span></div>
+  <div class="share"><span>Migration</span><div class="bar"><i style="width:0%"></i><u style="left:10%"></u></div><span>0% of 10%</span></div>
+  <div class="share"><span>Tidying</span><div class="bar"><i style="width:3%"></i><u style="left:10%"></u></div><span>3% of 10%</span></div>
+</div>
+
+<div class="board">
+  <div class="col"><h2>Queued <small>captured, incomplete record</small></h2>
+    <div class="card q"><div class="t">Pure-Zig deployment boundary note</div><div class="m"><span class="tag">Proofing</span><span class="tag">P2</span>atoma · UAA</div><div class="why">Waiting: no admission record yet (resources unknown, no acceptance criteria)</div><div class="acts"><button>Complete record</button><button>Drop</button></div></div>
+    <div class="card q"><div class="t">Investigate NVIDIA display-container crashes</div><div class="m"><span class="tag">Tech debt</span><span class="tag">P2</span>host</div><div class="why">Waiting: no owner assigned</div><div class="acts"><button>Complete record</button></div></div>
+  </div>
+
+  <div class="col"><h2>Ready <small>record complete, awaiting admission</small></h2>
+    <div class="card r"><div class="t">Proven local proof/ABI validation batch</div><div class="m"><span class="tag">Proofing</span><span class="tag">P1</span>proven#237 · 1 build worker · est 6 GiB, 40 min</div><div class="why">Waiting: host available RAM 0.9 GiB &lt; reserve 6 GiB. Admission gate rejecting.</div><div class="acts"><button>Admit anyway</button><button>Hold</button><button>Run remote instead</button></div></div>
+    <div class="card r"><div class="t">Scanner handover follow-up</div><div class="m"><span class="tag">Finishing</span><span class="tag">P3</span>handovers/scanner-findings.md · est unknown</div><div class="why">Waiting: resources unknown; needs one measured run before a reservation can be sized</div><div class="acts"><button>Admit as probe (hard cap 2 GiB)</button><button>Hold</button></div></div>
+  </div>
+
+  <div class="col"><h2>Admitted <small>reservation held, not yet started</small></h2>
+    <div class="card a"><div class="t">Five Proven SPDX header edits</div><div class="m"><span class="tag">Tidying</span><span class="tag">P2</span>proven#237 · lightweight, remote CI only</div><div class="why">Owner approval recorded. Starts when quiet-restart window is released.</div><div class="acts"><button>Start</button><button>Release reservation</button></div></div>
+  </div>
+
+  <div class="col"><h2>Running <small>lease held by one worker</small></h2>
+    <div class="card g"><div class="t">Atoma #28 merge path</div><div class="m"><span class="tag">Finishing</span><span class="tag">P1</span>lease: chat 01a1b7… · TTL 12 min · remote CI</div><div class="why">Progress: protection fix applied; gate workflow unpublished; waiting on new-head CI</div><div class="acts"><button>Checkpoint now</button><button>Preempt</button></div></div>
+  </div>
+
+  <div class="col"><h2>Checkpoint / validate <small>evidence under review</small></h2>
+    <div class="card k"><div class="t">UAA runtime registry gate</div><div class="m"><span class="tag">Proofing</span><span class="tag">P2</span>UAA#20 · 1,024-case oracle PASS</div><div class="why">Waiting: inherited Code Quality action disallowed by org. Not a code fault.</div><div class="acts"><button>Accept scoped</button><button>Return to ready</button></div></div>
+  </div>
+
+  <div class="col"><h2>Held <small>deliberately stopped</small></h2>
+    <div class="card h"><div class="t">Headroom helper processes</div><div class="m"><span class="tag">Tech debt</span>host · 0 remaining · startup disabled</div><div class="why">Held by: host resource hold, 16 Nov 10:15. Release requires available RAM &gt; 4 GiB sustained.</div><div class="acts"><button>Release hold</button></div></div>
+  </div>
+
+  <div class="col"><h2>Completed <small>last 24 h</small></h2>
+    <div class="card d"><div class="t">Atoma scoped protection correction</div><div class="m">rulesets 27373123 / 25658902 · audit JSON saved</div></div>
+    <div class="card d"><div class="t">RefC Bits8 word proof packet</div><div class="m">Agda, Lean, Rocq, Cubical · theory run 43867155331 PASS</div></div>
+  </div>
+</div>
+
+<footer>Every card shows one line beginning "Waiting:", "Held by:" or "Progress:". If a job cannot produce that line, the board has a bug, not the job.</footer>
+</body>
+</html>

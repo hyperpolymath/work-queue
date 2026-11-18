@@ -764,3 +764,17 @@ uncloak:
 lock-sync-fix:
     ./scripts/lock-sync-fix.sh
     ./scripts/check-lock-sync.sh
+
+# ── Work queue: spec → oracle → conformance ─────────────────────────────────
+# Model-check the TLA+ spec and rebuild both conformance oracles (needs Java 17+).
+wq-oracle:
+    ./scripts/wq-oracle.sh
+
+# Check the Zig core against every TLC state and transition.
+wq-conformance: wq-oracle
+    zig build test
+    zig build conformance --summary all
+
+# Plant one rule break at a time; every mutant must be caught.
+wq-mutants: wq-oracle
+    ./tests/conformance/mutants.sh

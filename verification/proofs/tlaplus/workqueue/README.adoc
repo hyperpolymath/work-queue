@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Work-queue spec, model check and conformance oracle
+
+`WorkQueue.tla` models the job contract (`docs/design/work-queue/CONTRACT.adoc`,
+sections 3 and 4): states, leases, reservations, heavy slots, obligations,
+priorities, probes, preemption, holds and the reject limit. It is the oracle
+the Zig core (`src/core/queue.zig`) is checked against.
+
+Rebuild everything with `just wq-conformance` (Java 17+, Zig 0.17.1). The TLC
+jar is fetched from the v1.8.0 release and pinned by SHA-256 in
+`scripts/wq-oracle.sh`.
+
+== Model-check results (TLC 1.8.0, model in `MC.tla`)
+
+Model: three jobs (j1 urgent and heavy; j2 normal and heavy; j3 low and light,
+sharing j2's obligation), two workers, capacity 4, one heavy slot, probe cap 2,
+reject limit 2.
+
+[cols="2,1,1,3",options="header"]
+|===
+|Config |Distinct states |Result |Checks
+|`Safety.cfg` (contract as drafted) |70,688 |pass |TypeOK, R1 one lease per job and worker, R1 heavy slots, R2 waiting is said, R4 reservation, R6 probe capped, Ownership
+|`SafetyWithFix.cfg` (reject limit on) |38,244 |pass |the same seven invariants
+|`LiveWithFix.cfg` |1,608 |pass |NoStarvation, Terminates, under weak fairness of the machine actions
+|`LiveAsDrafted.cfg` |3,355 |*fails, as expected* |NoStarvation and Terminates are both violated
+|===
+
+The as-drafted failure is the finding that justifies the reject limit. j1 is
+rejected at checkpoint, returns to `ready`, is re-admitted, and is rejected
+again for ever. Because j1 is the most urgent ready job, j3 is never admitted:
+one repeatedly rejected job starves every job below it. With the limit, j1 is
+held with reason `reject limit` after two rejects and needs an owner edit.
+`scripts/wq-oracle.sh` fails if this counterexample ever disappears.
+
+`rejects` is a saturating counter at `MaxRejects`. Nothing reads it above that
+value, so this keeps every behaviour while making the state space finite;
+an unbounded counter is why the first TLC runs never finished.
+
+Scope limits (reported, not hidden): the model has no clock (a lease lapse is
+an action the shell triggers), no category shares, and fixed declared facts
+per job. Results hold for this finite model only; they are bounded model
+checking, not a proof for all job counts.
+
+== Oracle format v1
+
+`oracle.awk` turns a TLC dump (`-dump dot,actionlabels`) into plain lines:
+
+----
+S <id> <hostHold 0|1> then, per job j1..j3: <st> <reason> <lease> <res> <measured 0|1> <rejects>
+I <id>                          the initial state
+E <from> <to> <Action> [job] [worker]
+----
+
+Reasons use `_` for spaces (`no_record`). Ids are dense and 1-based but not in
+file order. `E n n Next` lines are the stutter steps of finished states and map
+to no core action. Every (state, action) pair has exactly one successor.
+
+== What conformance checks (`tests/conformance/conformance.zig`)
+
+For both oracles:
+
+. every edge `s --A--> t` gives `step(s, A) == t`;
+. in every state, the set of actions the core enables equals the set of edges
+  leaving it, so the core has no extra and no missing moves;
+. in every state, the core's own rule checks (`brokenRule`) pass.
+
+Last run: 70,688 states and 462,932 transitions (as drafted), 38,244 states
+and 241,690 transitions (with the limit), all matching.
+
+`tests/conformance/mutants.sh` plants one rule break at a time in the core:
+15 mutants, 15 caught, 0 survived. Run with `just wq-mutants` (about 4 minutes).
