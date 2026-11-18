@@ -41,7 +41,7 @@ fn parseTag(s: []const u8) ?core.Tag {
         .{ "Reject", core.Tag.reject },             .{ "Preempt", core.Tag.preempt },
         .{ "Hold", core.Tag.hold },                 .{ "Release", core.Tag.release },
         .{ "Drop", core.Tag.drop },                 .{ "HostHoldOn", core.Tag.host_hold_on },
-        .{ "HostHoldOff", core.Tag.host_hold_off },
+        .{ "HostHoldOff", core.Tag.host_hold_off }, .{ "Beat", core.Tag.beat },
     };
     inline for (names) |p| if (std.mem.eql(u8, s, p[0])) return p[1];
     return null;
@@ -95,6 +95,19 @@ fn conform(oracle: []const u8, params: core.Params, want_states: usize) !void {
         seen.set(id - 1);
         states.items[id - 1] = try parseState(&it);
     }
+    // The spec's Init must be exactly a fresh core queue.
+    var inits: usize = 0;
+    lines = std.mem.tokenizeScalar(u8, oracle, '\n');
+    while (lines.next()) |line| {
+        if (line[0] != 'I') continue;
+        var it = std.mem.tokenizeScalar(u8, line, ' ');
+        _ = it.next();
+        const id = try std.fmt.parseInt(usize, it.next().?, 10);
+        if (id == 0 or id > count) return error.BadStateId;
+        if (!std.meta.eql(states.items[id - 1], Q{})) return error.InitialStateMismatch;
+        inits += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), inits);
     // Pass 2: edges.
     var edges: usize = 0;
     var stutters: usize = 0;

@@ -4,7 +4,7 @@
 
 `WorkQueue.tla` models the job contract (`docs/design/work-queue/CONTRACT.adoc`,
 sections 3 and 4): states, leases, reservations, heavy slots, obligations,
-priorities, probes, preemption, holds and the reject limit. It is the oracle
+priorities, probes, preemption, holds, heartbeats and the reject limit. It is the oracle
 the Zig core (`src/core/queue.zig`) is checked against.
 
 Rebuild everything with `just wq-conformance` (Java 17+, Zig 0.17.1). The TLC
@@ -65,8 +65,20 @@ For both oracles:
   leaving it, so the core has no extra and no missing moves;
 . in every state, the core's own rule checks (`brokenRule`) pass.
 
-Last run: 70,688 states and 462,932 transitions (as drafted), 38,244 states
-and 241,690 transitions (with the limit), all matching.
+It also checks that the oracle's one initial state is exactly a fresh core
+queue.
 
-`tests/conformance/mutants.sh` plants one rule break at a time in the core:
-15 mutants, 15 caught, 0 survived. Run with `just wq-mutants` (about 4 minutes).
+Last run: 70,688 states and 492,436 transitions (as drafted), 38,244 states
+and 256,886 transitions (with the limit), all matching. Of those, 29,504 and
+15,196 are `Beat` stutter steps (one per running job per state).
+
+`tests/conformance/mutants.sh` plants one rule break at a time in the core.
+It first requires the unmodified core to pass, and counts a mutant as caught
+only if it compiles and then fails conformance; a mutant that does not
+compile is reported as invalid and fails the run. Last run: 16 mutants,
+16 caught, 0 survived, 0 invalid. Run with `just wq-mutants` (about 5 minutes).
+
+Correction: the first version of this script (PR #1) reported 15 of 15 caught,
+but its "admit ignores priority" mutant did not compile, and the script
+counted the compile failure as a catch. The priority rule was therefore not
+mutation-tested in that run. Found in review; fixed, and now caught.

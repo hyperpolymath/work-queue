@@ -114,6 +114,11 @@ Drop(j) ==
   /\ reason' = [reason EXCEPT ![j] = "none"]
   /\ UNCHANGED <<lease, measured, rejects, hostHold>>
 
+Beat(j) ==   \* heartbeat: the shell extends the lease; the model has no clock,
+             \* so no modelled variable changes. Enabled only while running.
+  /\ st[j] = "running"
+  /\ UNCHANGED vars
+
 HostHoldOn  == ~hostHold /\ hostHold' = TRUE  /\ UNCHANGED <<st, reason, lease, res, measured, rejects>>
 HostHoldOff ==  hostHold /\ hostHold' = FALSE /\ UNCHANGED <<st, reason, lease, res, measured, rejects>>
 
@@ -123,7 +128,7 @@ Done == \A j \in Jobs : st[j] \in {"completed","dropped"}
 Next ==
   \/ \E j \in Jobs : Record(j) \/ Admit(j) \/ LeaseLapse(j) \/ Checkpoint(j)
                      \/ Accept(j) \/ Reject(j) \/ Preempt(j) \/ Hold(j)
-                     \/ Release(j) \/ Drop(j)
+                     \/ Release(j) \/ Drop(j) \/ Beat(j)
   \/ \E j \in Jobs, w \in Workers : Start(j, w)
   \/ HostHoldOn \/ HostHoldOff
   \/ (Done /\ UNCHANGED vars)

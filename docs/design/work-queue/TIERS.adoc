@@ -21,8 +21,12 @@ toc::[]
   clock, no I/O, no allocation. Time, files, processes and HTML live in the
   shell and reach the core only as actions.
 * *One action per persisted change.* The store is an append-only event log.
-  Current state is the fold of the core's `step` over the log, so every state
-  the tool can ever be in is one the conformance check has covered.
+  Current state is the fold of the core's `step` over the log, so every
+  persisted change goes through the checked transition function. That is a
+  claim about the code path, not about coverage: the conformance check is
+  exhaustive only for the finite model it was run on (three jobs, two
+  workers, the MC.tla constants). States with more jobs or other declared
+  facts are reached through the same `step`, but no graph covers them.
 * Zig 0.17.1. No banned estate languages (no Python, Go, TypeScript, Nix).
   JSON written by the tool is I-JSON serialised by JCS (RFC 7493, RFC 8785),
   one record per line in `.jsonl`.
@@ -39,13 +43,26 @@ is made in this file first, in the tier 1 PR.
 
 `$WQ_HOME`, default `$XDG_STATE_HOME/work-queue` (`~/.local/state/work-queue`):
 
-* `jobs/<id>.toml`: the job record from CONTRACT section 2 (declared facts,
-  owner-edited).
-* `events.jsonl`: append-only. One line per core action:
-  `{"action":"start","at":"<RFC 3339>","job":"<id>","seq":<n>,"worker":"w1"}`.
+* `jobs/<id>/<rev>.toml`: the job record from CONTRACT section 2. A revision
+  is immutable once written. The owner edits a job by writing a new
+  revision, and `q amend` records it as an event.
+* `host/<rev>.toml`: capacity, heavy slots, probe cap, reject limit, workers,
+  lease TTL and category share targets. Immutable per revision, like jobs.
+* `events.jsonl`: append-only, one line per event, for example
+  `{"action":"start","at":"<RFC 3339>","job":"<id>","rev":3,"seq":<n>,"worker":"w1"}`.
   Writers hold an exclusive `flock` on the log for read, check and append.
-* `host.toml`: capacity, heavy slots, probe cap, reject limit, workers, lease
-  TTL and category share targets.
+
+Replay uses, for each event, the job and host revisions that were current
+when it was appended, so editing a record never changes how history folds.
+Revisions change the spec's constants (`Need`, `Prio`, `Obl`, `Cap` and the
+rest), so `amend` and `host amend` are spec work, done before they are coded.
+Until then they are refused unless every job they affect is `queued` or
+`dropped`, and a host revision may never set `Cap` below the reserved total.
+
+Leases live in the shell, because the model has no clock. A lease's expiry is
+the time of its latest `start` or `beat` event plus the TTL of the host
+revision in force at that event. `q tick` compares that against the clock
+and appends one `lease_lapse` event per expired lease.
 
 === CLI: `q`
 
@@ -55,12 +72,14 @@ enables it.
 [cols="1,1,3",options="header"]
 |===
 |Verb |Core action |Notes
-|`q add <file.toml>` |none |stores the record; the job starts `queued`
+|`q add <file.toml>` |none |stores revision 1; the job starts `queued`
+|`q amend <id> <file.toml>` |none yet |new revision; spec work first (see Store)
 |`q record <id>` |Record |refused until all seven admission fields are set
 |`q gate <id>` |none |read-only: says which guard blocks Admit, in words
 |`q admit <id>` |Admit |
 |`q start <id> --worker <w>` |Start |grants a lease with the host TTL
-|`q beat <id>` |none |extends the lease; refused if no live lease
+|`q beat <id>` |Beat |durable event; extends the lease to now + TTL. Beat is
+a stutter in the spec (the model has no clock), enabled only while running
 |`q tick` |LeaseLapse for each expired lease |also run implicitly by every verb
 |`q checkpoint <id>` |Checkpoint |records the measurement
 |`q accept <id>` / `q reject <id>` |Accept / Reject |

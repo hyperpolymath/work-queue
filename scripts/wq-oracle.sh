@@ -28,9 +28,12 @@ done
 if tlc LiveAsDrafted > "$meta/lad.log" 2>&1; then
   echo "LiveAsDrafted unexpectedly passed: the recorded counterexample is gone" >&2; exit 1
 fi
-grep -q 'Temporal properties NoStarvation and Terminates were violated' "$meta/lad.log" \
+# TLC names the properties its one reported lasso violates. The finding is the
+# endless reject loop, which always breaks Terminates; NoStarvation may or may
+# not be named, depending on which lasso TLC reports.
+grep -qE 'Temporal propert(y|ies) (.* )?Terminates( .*)? (was|were) violated' "$meta/lad.log" \
   || { tail -40 "$meta/lad.log"; echo "LiveAsDrafted failed for an unexpected reason" >&2; exit 1; }
-echo "fail  LiveAsDrafted: NoStarvation and Terminates violated (expected)"
+echo "fail  LiveAsDrafted (expected): $(grep -E 'Temporal propert(y|ies) .* violated' "$meta/lad.log")"
 
 tlc Safety -dump dot,actionlabels "$meta/drafted.dot" > /dev/null 2>&1
 tlc SafetyWithFix -dump dot,actionlabels "$meta/fix.dot" > /dev/null 2>&1
