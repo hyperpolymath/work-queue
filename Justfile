@@ -766,7 +766,7 @@ lock-sync-fix:
     ./scripts/check-lock-sync.sh
 
 # ── Work queue: spec → oracle → conformance ─────────────────────────────────
-# Model-check the TLA+ spec and rebuild both conformance oracles (needs Java 17+).
+# Model-check the TLA+ spec and rebuild the three conformance oracles (needs Java 17+).
 wq-oracle:
     ./scripts/wq-oracle.sh
 
@@ -774,6 +774,11 @@ wq-oracle:
 wq-conformance: wq-oracle
     zig build test
     zig build conformance --summary all
+
+# Build q and replay the CLI golden scenario on a scratch $WQ_HOME.
+wq-cli:
+    zig build
+    ./tests/cli/golden.sh
 
 # Plant one rule break at a time; every mutant must be caught.
 wq-mutants: wq-oracle

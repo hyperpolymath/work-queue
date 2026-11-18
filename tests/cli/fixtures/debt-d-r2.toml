@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0
+id       = "debt-d"
+title    = "Incomplete record"
+category = "debt"
+priority = 2
+owner    = "chat:03"

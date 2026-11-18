@@ -7,7 +7,10 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Jobs, Workers, Cap, Slots, ProbeCap, MaxRejects,
           Need, Heavy, Prio, Ckpt, Obl, None,
+          Cat, Weight,      \* category of each job; positive share weight per category
           UseRejectBound    \* FALSE = contract as drafted, TRUE = proposed fix
+
+ASSUME \A j \in Jobs : Weight[Cat[j]] \in Nat \ {0}
 
 VARIABLES st, reason, lease, res, measured, rejects, hostHold
 vars == <<st, reason, lease, res, measured, rejects, hostHold>>
@@ -27,6 +30,16 @@ SizeFor(j)   == IF measured[j] THEN Need[j] ELSE ProbeCap
 HeavyRunning == {j \in Jobs : st[j] = "running" /\ Heavy[j]}
 Fits(j)      == SizeFor(j) <= Free
 
+\* Category shares (contract rule 5): a tie-break inside one priority, never an
+\* override of it. Used(c) is the reservation the category's active jobs hold
+\* now. Among eligible jobs of equal priority, a category further below its
+\* weight goes first; ratios are compared by cross-multiplying, so exactly.
+Used(c)         == SumRes({j \in Jobs : Cat[j] = c})
+OblBusy(j)      == \E k \in Jobs : k # j /\ Obl[k] = Obl[j] /\ st[k] \in Active
+Eligible(k)     == st[k] = "ready" /\ Fits(k) /\ ~OblBusy(k)
+ShareFirst(k, j) == /\ Prio[k] = Prio[j]
+                    /\ Used(Cat[k]) * Weight[Cat[j]] < Used(Cat[j]) * Weight[Cat[k]]
+
 Init ==
   /\ st       = [j \in Jobs |-> "queued"]
   /\ reason   = [j \in Jobs |-> "no record"]
@@ -41,10 +54,11 @@ Record(j) ==
   /\ st' = [st EXCEPT ![j] = "ready"] /\ reason' = [reason EXCEPT ![j] = "gate"]
   /\ UNCHANGED <<lease, res, measured, rejects, hostHold>>
 
-Admit(j) ==   \* rules 4, 5, 6 and the ownership check
+Admit(j) ==   \* rules 4, 5 (priority, then share), 6 and the ownership check
   /\ st[j] = "ready" /\ ~hostHold /\ Fits(j)
   /\ ~\E k \in Jobs : k # j /\ st[k] = "ready" /\ Prio[k] < Prio[j] /\ Fits(k)
   /\ ~\E k \in Jobs : k # j /\ Obl[k] = Obl[j] /\ st[k] \in Active
+  /\ ~\E k \in Jobs : k # j /\ Eligible(k) /\ ShareFirst(k, j)
   /\ st' = [st EXCEPT ![j] = "admitted"]
   /\ res' = [res EXCEPT ![j] = SizeFor(j)]
   /\ reason' = [reason EXCEPT ![j] = "awaiting start"]

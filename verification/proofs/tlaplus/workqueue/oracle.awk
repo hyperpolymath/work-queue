@@ -1,16 +1,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 # Convert a TLC state-graph dump (-dump dot,actionlabels) of MC.tla into the
-# work-queue oracle format v1 (see ORACLE.adoc). POSIX awk (mawk-compatible).
+# work-queue oracle format v1 (see README.adoc). POSIX awk (mawk-compatible).
 #   S <n> <hostHold> then per job in Jobs order: st reason lease res measured rejects
 #   I <n>                          initial state
 #   E <from> <to> <Action> [args]  one labelled transition
-function field(lbl, name,    i, n, parts, p) {
-  n = split(lbl, parts, /\\n/)
+# TLC wraps a long value onto further \n-separated lines; a line that does not
+# open a new "/\ var = " conjunct continues the previous one.
+function field(lbl, name,    i, n, parts, p, v, on) {
+  n = split(lbl, parts, /\\n/); on = 0
   for (i = 1; i <= n; i++) {
-    p = parts[i]; sub(/^\/\\\\ /, "", p)
-    if (index(p, name " = ") == 1) return substr(p, length(name) + 4)
+    p = parts[i]
+    if (p ~ /^\/\\\\ /) {
+      if (on) return v
+      sub(/^\/\\\\ /, "", p)
+      if (index(p, name " = ") == 1) { on = 1; v = substr(p, length(name) + 4) }
+    } else if (on) { sub(/^ +/, " ", p); v = v p }
   }
+  if (on) return v
   print "oracle.awk: missing variable " name > "/dev/stderr"; exit 2
 }
 function perjob(v,    out, n, xs, i) {
@@ -18,11 +25,11 @@ function perjob(v,    out, n, xs, i) {
   gsub(/j[0-9]+ \|-> /, "", v)
   n = split(v, xs, /, /)
   if (n != NJ) { print "oracle.awk: expected " NJ " jobs, got " n > "/dev/stderr"; exit 2 }
-  for (i = 1; i <= n; i++) { gsub(/ /, "_", xs[i]); out = out (i > 1 ? "\t" : "") xs[i] }
+  for (i = 1; i <= n; i++) { gsub(/^ +| +$/, "", xs[i]); gsub(/ /, "_", xs[i]); out = out (i > 1 ? "\t" : "") xs[i] }
   return out
 }
 function idx(id) { if (!(id in IDX)) { IDX[id] = ++N } ; return IDX[id] }
-BEGIN { NJ = 3; FS = "\n" }
+BEGIN { if (NJ == "") NJ = 3; FS = "\n" }   # awk -v NJ=<jobs>
 /^-?[0-9]+ \[label="/ {
   id = $0; sub(/ .*/, "", id)
   if (id in SEEN) next

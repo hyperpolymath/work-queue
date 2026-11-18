@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MPL-2.0
+id       = "tidy-e"
+title    = "Tidy generated docs"
+category = "debt"
+priority = 3
+owner    = "chat:04"
+heavy    = false
+
+[admission]
+purpose    = "Regenerate and tidy docs"
+command    = "just docs"
+cwd        = "/home/hyperpolymath/proven"
+ownership  = "docs/ only"
+resources  = { ram_gib = 1 }
+duration   = "30m"
+checkpoint = "commit work in progress to a branch"
+accept     = "docs build clean"
