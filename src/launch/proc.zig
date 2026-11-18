@@ -42,7 +42,7 @@ pub const Proc = struct {
         while (true) {
             const rc = linux.waitpid(pid, &raw, linux.W.NOHANG);
             switch (linux.errno(rc)) {
-                .SUCCESS => return if (rc == 0) null else @as(u32, @bitCast(raw)),
+                .SUCCESS => return if (rc == 0) null else std.math.cast(u32, raw) orelse 0, // checked; a wait status is never negative
                 .INTR => continue,
                 else => return 0, // ECHILD: already gone; report a clean 0 exit
             }
