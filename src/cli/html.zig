@@ -383,16 +383,18 @@ test "WCAG contrast ratio matches the published extremes" {
 test "every text pair meets WCAG AA (4.5) and every state edge meets 3, in both themes" {
     // [foreground, background]: text actually drawn on that background.
     const text = [_][2][]const u8{
-        .{ "ink", "bg" },       .{ "ink", "panel" },       .{ "ink", "meter-bg" },
-        .{ "muted", "bg" },     .{ "muted", "panel" },     .{ "muted", "meter-bg" },
+        .{ "ink", "bg" },     .{ "ink", "panel" },   .{ "ink", "meter-bg" },
+        .{ "muted", "bg" },   .{ "muted", "panel" }, .{ "muted", "meter-bg" },
         .{ "warn", "panel" },
     };
     // Non-text marks that carry meaning, against the panel they sit on (WCAG 1.4.11).
     const marks = [_][2][]const u8{
-        .{ "meter", "meter-bg" }, .{ "ink", "meter-bg" },
-        .{ "queued", "panel" },   .{ "ready", "panel" },      .{ "admitted", "panel" },
-        .{ "running", "panel" },  .{ "checkpoint", "panel" }, .{ "held", "panel" },
-        .{ "completed", "panel" }, .{ "dropped", "panel" },   .{ "warn", "panel" },
+        .{ "meter", "meter-bg" },   .{ "ink", "meter-bg" },
+        .{ "queued", "panel" },     .{ "ready", "panel" },
+        .{ "admitted", "panel" },   .{ "running", "panel" },
+        .{ "checkpoint", "panel" }, .{ "held", "panel" },
+        .{ "completed", "panel" },  .{ "dropped", "panel" },
+        .{ "warn", "panel" },
     };
     const find = struct {
         fn f(name: []const u8) Tone {
