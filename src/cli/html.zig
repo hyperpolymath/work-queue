@@ -128,9 +128,9 @@ const css_body =
     \\.shares{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
     \\.shares .note{color:var(--muted);font-size:13px;margin:0 0 8px}
     \\.share{display:grid;grid-template-columns:minmax(0,170px) 1fr minmax(0,210px);gap:8px;align-items:center;font-size:14px;margin:6px 0}
-    \\.bar{height:10px;background:var(--meter-bg);border-radius:5px;position:relative;overflow:hidden}
-    \\.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--meter)}
-    \\.bar u{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:var(--ink)}
+    \\.bar{display:block;width:100%;height:10px;background:var(--meter-bg);border-radius:5px;overflow:hidden}
+    \\.bar .fill{fill:var(--meter)}
+    \\.bar .tick{stroke:var(--ink);stroke-width:3px;vector-effect:non-scaling-stroke}
     \\.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
     \\.col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:120px}
     \\.none{color:var(--muted);font-size:13px}
@@ -280,17 +280,27 @@ pub fn render(arena: std.mem.Allocator, board_json: []const u8, opts: Options, w
     const h = b.host;
     const free = if (h.cap > h.reserved) h.cap - h.reserved else 0;
 
+    // The whole stylesheet is built first so the CSP can name it by hash:
+    // no 'unsafe-inline', and no style attribute anywhere on the page.
+    var style: Writer.Allocating = .init(arena);
+    try style.writer.writeAll("\n:root{");
+    try writeTones(&style.writer, false);
+    try style.writer.writeAll("}\n@media (prefers-color-scheme: dark){:root{");
+    try writeTones(&style.writer, true);
+    try style.writer.writeAll("}}\n");
+    try style.writer.writeAll(css_body);
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(style.written(), &digest, .{});
+    var b64: [std.base64.standard.Encoder.calcSize(digest.len)]u8 = undefined;
+    const hash = std.base64.standard.Encoder.encode(&b64, &digest);
+
     try w.writeAll("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
     try w.writeAll("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
     try w.writeAll("<meta name=\"color-scheme\" content=\"light dark\">\n");
-    try w.writeAll("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">\n");
+    try w.print("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'sha256-{s}'; base-uri 'none'; form-action 'none'\">\n", .{hash});
     if (opts.refresh_seconds) |s| try w.print("<meta http-equiv=\"refresh\" content=\"{d}\">\n", .{s});
-    try w.writeAll("<title>Work Queue Board</title>\n<style>\n:root{");
-    try writeTones(w, false);
-    try w.writeAll("}\n@media (prefers-color-scheme: dark){:root{");
-    try writeTones(w, true);
-    try w.writeAll("}}\n");
-    try w.writeAll(css_body);
+    try w.writeAll("<title>Work Queue Board</title>\n<style>");
+    try w.writeAll(style.written());
     try w.writeAll("</style>\n</head>\n<body>\n<header>\n<h1>Work Queue Board</h1>\n<p class=\"sub\">Read-only view, generated ");
     try bdi(w, b.generated_at);
     try w.writeAll(" from <span class=\"wrap\">" ++ schema_name ++ "</span>. Run <code>q board</code> for the text form.</p>\n</header>\n<main>\n");
@@ -315,7 +325,7 @@ pub fn render(arena: std.mem.Allocator, board_json: []const u8, opts: Options, w
         const word = if (used > target) "over target" else if (used < target) "under target" else "on target";
         try w.writeAll("<li class=\"share\"><span class=\"wrap\">");
         try bdi(w, c.name);
-        try w.print("</span><div class=\"bar\" aria-hidden=\"true\"><i style=\"width:{d}%\"></i><u style=\"left:{d}%\"></u></div><span>{d}% of {d}%, {s}</span></li>\n", .{ used, target, used, target, word });
+        try w.print("</span><svg class=\"bar\" viewBox=\"0 0 100 10\" preserveAspectRatio=\"none\" aria-hidden=\"true\" focusable=\"false\"><rect class=\"fill\" width=\"{d}\" height=\"10\"/><line class=\"tick\" x1=\"{d}\" x2=\"{d}\" y1=\"0\" y2=\"10\"/></svg><span>{d}% of {d}%, {s}</span></li>\n", .{ used, target, target, used, target, word });
     }
     try w.writeAll("</ul>\n</div>\n</section>\n");
 
@@ -453,6 +463,9 @@ test "hostile strings are escaped and never reach an attribute" {
     try std.testing.expect(std.mem.indexOf(u8, html, "\u{fffd}") != null); // NUL replaced
     try std.testing.expect(std.mem.indexOf(u8, html, "\u{202e}") == null); // bidi override replaced
     try std.testing.expect(std.mem.indexOf(u8, html, "refresh") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "unsafe-inline") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, " style=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "style-src 'sha256-") != null);
 }
 
 test "refresh meta only when asked" {

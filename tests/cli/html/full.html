@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-JCUt0wRONW2jU9Sj22o1tyRnTGq9AqnDq3ZdfF23/e0='; base-uri 'none'; form-action 'none'">
 <title>Work Queue Board</title>
 <style>
 :root{--bg:#f6f5f1;--panel:#ffffff;--ink:#1d1d1b;--muted:#5c5b57;--line:#dcdad3;--meter-bg:#e6e4dd;--meter:#2a64a3;--warn:#a82f28;--queued:#76766f;--ready:#2a64a3;--admitted:#7a4fb5;--running:#1b7a50;--checkpoint:#a86a0a;--held:#b3362f;--completed:#4b4b48;--dropped:#6a6a66;}
@@ -30,9 +30,9 @@ bdi,.wrap{overflow-wrap:anywhere}
 .shares{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .shares .note{color:var(--muted);font-size:13px;margin:0 0 8px}
 .share{display:grid;grid-template-columns:minmax(0,170px) 1fr minmax(0,210px);gap:8px;align-items:center;font-size:14px;margin:6px 0}
-.bar{height:10px;background:var(--meter-bg);border-radius:5px;position:relative;overflow:hidden}
-.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--meter)}
-.bar u{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:var(--ink)}
+.bar{display:block;width:100%;height:10px;background:var(--meter-bg);border-radius:5px;overflow:hidden}
+.bar .fill{fill:var(--meter)}
+.bar .tick{stroke:var(--ink);stroke-width:3px;vector-effect:non-scaling-stroke}
 .board{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:120px}
 .none{color:var(--muted);font-size:13px}
@@ -75,10 +75,10 @@ body{padding:12px}
 <h2 id="h-shares">Category shares</h2>
 <p class="note">Bar = share of the reservation held now; tick = target. Equal priorities go to the category furthest below its target.</p>
 <ul>
-<li class="share"><span class="wrap"><bdi>debt</bdi></span><div class="bar" aria-hidden="true"><i style="width:9%"></i><u style="left:20%"></u></div><span>9% of 20%, under target</span></li>
-<li class="share"><span class="wrap"><bdi>finishing</bdi></span><div class="bar" aria-hidden="true"><i style="width:27%"></i><u style="left:20%"></u></div><span>27% of 20%, over target</span></li>
-<li class="share"><span class="wrap"><bdi>proofing</bdi></span><div class="bar" aria-hidden="true"><i style="width:55%"></i><u style="left:40%"></u></div><span>55% of 40%, over target</span></li>
-<li class="share"><span class="wrap"><bdi>tidying</bdi></span><div class="bar" aria-hidden="true"><i style="width:9%"></i><u style="left:20%"></u></div><span>9% of 20%, under target</span></li>
+<li class="share"><span class="wrap"><bdi>debt</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
+<li class="share"><span class="wrap"><bdi>finishing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="27" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>27% of 20%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>proofing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="55" height="10"/><line class="tick" x1="40" x2="40" y1="0" y2="10"/></svg><span>55% of 40%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>tidying</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
 </ul>
 </div>
 </section>

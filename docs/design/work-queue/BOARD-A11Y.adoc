@@ -32,7 +32,7 @@ toc::[]
 |No state by colour alone |pass |every card carries its state as a word and the `Waiting:`/`Held by:`/`Progress:` line; warning tiles carry "(FULL)", "(NONE FREE)", "ON"; meters carry numbers plus "over/under/on target"
 |Phone width (360 px) |pass |no horizontal overflow on either fixture; columns and share rows stack; long titles wrap (`overflow-wrap:anywhere`)
 |Language, landmarks |pass |`lang="en"`, `header`/`main`/`footer`, labelled sections
-|Scripts |none |no script element; CSP `default-src 'none'`
+|Scripts |none |no script element; CSP `default-src 'none'` with the one stylesheet pinned by SHA-256 hash (no `unsafe-inline`, no style attributes; meter bars are inline SVG)
 |===
 
 == Findings that are not fixed

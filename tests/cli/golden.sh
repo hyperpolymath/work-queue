@@ -86,17 +86,25 @@ neg "a sequence gap" '3d'
 #    renderer, wq-render), hostile input included; the page of the real store
 #    is in transcript.txt (`board --html --out -`).
 render=$PWD/zig-out/bin/wq-render
-[ -x "$render" ] || { echo "golden: build wq-render first (zig build)" >&2; exit 2; }
+[[ -x "$render" ]] || { echo "golden: build wq-render first (zig build)" >&2; exit 2; }
 mkdir -p "$here/html"
+check_html() { # name, produced file
+  local name=$1 produced=$2
+  if [[ $update = 1 ]]; then cp "$produced" "$here/html/$name"; echo "updated  html/$name"
+  elif cmp -s "$produced" "$here/html/$name"; then echo "same     html/$name"
+  else echo "DIFFERS  html/$name"; diff -u "$here/html/$name" "$produced" | head -40; fail=1; fi
+}
 for n in full hostile; do
   "$render" <"$here/html/$n.board.json" >"$tmp/$n.html"
-  check_html() { if [ "$update" = 1 ]; then cp "$2" "$here/html/$1"; echo "updated  html/$1"
-    elif cmp -s "$2" "$here/html/$1"; then echo "same     html/$1"
-    else echo "DIFFERS  html/$1"; diff -u "$here/html/$1" "$2" | head -40; fail=1; fi; }
   check_html "$n.html" "$tmp/$n.html"
 done
+# the refresh meta is an option of the renderer, not a second golden page
 "$render" --refresh 10 <"$here/html/full.board.json" >"$tmp/full-refresh.html"
-check_html full-refresh.html "$tmp/full-refresh.html"
+if grep -q '<meta http-equiv="refresh" content="10">' "$tmp/full-refresh.html" && ! grep -q 'http-equiv="refresh"' "$tmp/full.html"; then
+  echo "refresh  renderer adds the meta only when asked"; else echo "refresh meta wrong in the renderer"; fail=1; fi
+# the page needs no unsafe-inline: no style attribute, and the CSP names the one stylesheet by hash
+if grep -q 'unsafe-inline\| style=' "$tmp/full.html" || ! grep -q "style-src 'sha256-" "$tmp/full.html"; then
+  echo "CSP/style: the page needs unsafe-inline"; fail=1; else echo "csp      no unsafe-inline, stylesheet pinned by hash"; fi
 # hostile input must stay inert text: no script element, no handler attribute, no raw bidi override
 if grep -Eq '<(script|img)|<[^>]* on[a-z]+=' "$tmp/hostile.html" || grep -q $'\xe2\x80\xae' "$tmp/hostile.html"; then
   echo "UNESCAPED hostile input in html/hostile.html"; fail=1; else echo "inert    hostile input"; fi
@@ -105,26 +113,25 @@ if "$render" <<<'{"schema":"work-queue/board/v2"}' >/dev/null 2>&1; then echo "A
 before=$(cd "$WQ_HOME" && find . -type f ! -name board.html -exec sha256sum {} + | sort)
 WQ_NOW=2026-11-18T10:00:00Z "$q" board --html >"$tmp/wrote.txt"
 after=$(cd "$WQ_HOME" && find . -type f ! -name board.html -exec sha256sum {} + | sort)
-if [ "$before" = "$after" ] && [ -f "$WQ_HOME/board.html" ]; then echo "read-only board --html left the store untouched"; else echo "board --html CHANGED THE STORE"; fail=1; fi
+if [[ $before = "$after" && -f $WQ_HOME/board.html ]]; then echo "read-only board --html left the store untouched"; else echo "board --html CHANGED THE STORE"; fail=1; fi
 # --watch: first page carries the refresh meta; an appended event regenerates it
 set +e; WQ_NOW=2026-11-18T10:00:00Z "$q" board --html --watch --out "$tmp/live.html" >"$tmp/watch.out" 2>&1 & wpid=$!; set -e
-for _ in $(seq 50); do [ -s "$tmp/live.html" ] && break; sleep 0.1; done
-grep -q 'http-equiv="refresh"' "$tmp/live.html" && echo "watch    first page has the refresh meta" || { echo "watch: no refresh meta"; fail=1; }
+for _ in $(seq 50); do [[ -s $tmp/live.html ]] && break; sleep 0.1; done
+if grep -q 'http-equiv="refresh"' "$tmp/live.html"; then echo "watch    first page has the refresh meta"; else echo "watch: no refresh meta"; fail=1; fi
 cp "$tmp/live.html" "$tmp/live0.html"
 WQ_NOW=2026-11-18T10:05:00Z "$q" host hold >/dev/null
 changed=0; for _ in $(seq 60); do cmp -s "$tmp/live.html" "$tmp/live0.html" || { changed=1; break; }; sleep 0.1; done
 kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null || true
-if [ "$changed" = 1 ] && grep -q 'ON (no job is admitted)' "$tmp/live.html"; then echo "watch    page regenerated after the log changed"; else echo "watch: page did not regenerate"; fail=1; fi
-
+if [[ $changed = 1 ]] && grep -q 'ON (no job is admitted)' "$tmp/live.html"; then echo "watch    page regenerated after the log changed"; else echo "watch: page did not regenerate"; fail=1; fi
 # --refresh: 0 means a watched page without the meta; a bad use is a usage error (2)
 set +e
 WQ_NOW=2026-11-18T10:00:00Z "$q" board --html --watch --refresh 0 --out "$tmp/norefresh.html" >/dev/null 2>&1 & rpid=$!
-for _ in $(seq 50); do [ -s "$tmp/norefresh.html" ] && break; sleep 0.1; done
+for _ in $(seq 50); do [[ -s $tmp/norefresh.html ]] && break; sleep 0.1; done
 kill "$rpid" 2>/dev/null; wait "$rpid" 2>/dev/null
 WQ_NOW=2026-11-18T10:00:00Z "$q" board --html --refresh 5 --out - >/dev/null 2>&1; rc1=$?
 WQ_NOW=2026-11-18T10:00:00Z "$q" board --html --watch --refresh x --out "$tmp/x.html" >/dev/null 2>&1; rc2=$?
 set -e
-if [ -s "$tmp/norefresh.html" ] && ! grep -q 'http-equiv="refresh"' "$tmp/norefresh.html"; then echo "refresh  --refresh 0 leaves the meta out"; else echo "--refresh 0 still has the meta"; fail=1; fi
-if [ "$rc1" = 2 ] && [ "$rc2" = 2 ]; then echo "exit 2   --refresh without --watch, and a non-number"; else echo "refresh usage errors gave $rc1 $rc2 (want 2 2)"; fail=1; fi
+if [[ -s $tmp/norefresh.html ]] && ! grep -q 'http-equiv="refresh"' "$tmp/norefresh.html"; then echo "refresh  --refresh 0 leaves the meta out"; else echo "--refresh 0 still has the meta"; fail=1; fi
+if [[ $rc1 = 2 && $rc2 = 2 ]]; then echo "exit 2   --refresh without --watch, and a non-number"; else echo "refresh usage errors gave $rc1 $rc2 (want 2 2)"; fail=1; fi
 
 [ "$fail" = 0 ] && echo "golden: all checks pass" || { echo "golden: FAILED" >&2; exit 1; }
