@@ -24,6 +24,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = launch })).step);
+    // Tier 3: the pure board renderer (board JSON in, HTML out).
+    const html = b.createModule(.{
+        .root_source_file = b.path("src/cli/html.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = html })).step);
+    const render = b.addExecutable(.{ .name = "wq-render", .root_module = b.createModule(.{
+        .root_source_file = b.path("tests/cli/render.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "html", .module = html }},
+    }) });
+    b.installArtifact(render); // golden-test driver for the HTML board
 
     // The `q` CLI: the imperative shell around the core.
     const cli = b.createModule(.{
@@ -33,6 +47,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "queue", .module = queue },
             .{ .name = "launch", .module = launch },
+            .{ .name = "html", .module = html },
         },
     });
     const q = b.addExecutable(.{ .name = "q", .root_module = cli });

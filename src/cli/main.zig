@@ -19,6 +19,7 @@ const time = @import("time.zig");
 const jcs = @import("jcs.zig");
 const ledger = @import("ledger.zig");
 const launch = @import("launch");
+const html = @import("html");
 
 const Io = std.Io;
 const Writer = Io.Writer;
@@ -39,6 +40,9 @@ const Ctx = struct {
     err: *Writer,
     /// The words of the last refusal, for callers that report it themselves.
     last_refusal: []const u8 = "",
+    /// True when WQ_NOW pinned the clock (tests): `board --html --watch` then
+    /// re-renders on log changes only, never on elapsed time.
+    clock_fixed: bool = false,
 
     fn path(c: *Ctx, parts: []const []const u8) ![]const u8 {
         var all: std.ArrayList([]const u8) = .empty;
@@ -707,6 +711,107 @@ fn holdAfterFailure(c: *Ctx, id: []const u8) void {
     c.out.flush() catch {};
 }
 
+// ------------------------------------------------------------ board (HTML)
+
+/// `board --html --watch` looks at events.jsonl this often.
+const watch_poll_ms = 1000;
+/// The default meta refresh of a watched page, in seconds (`--refresh N`; 0 = none).
+const watch_refresh_s = 10;
+/// A watched page is also rewritten this often with a real clock, so the
+/// "lease 12m left" lines do not go stale between events.
+const watch_regen_s = 60;
+
+/// Render the board once: fold the log (shared lock, read only), derive the
+/// page from the board JSON, and write it. Nothing in the store is touched;
+/// the page is replaced atomically so a browser never reads half of it.
+fn renderPage(c: *Ctx, dest: ?[]const u8, refresh: ?u32) Fail!void {
+    var s = try open(c, false);
+    defer close(c, &s);
+    if (s.l.host == null) return c.refuse("no host record yet: run q host amend first", .{});
+    var json: Writer.Allocating = .init(c.arena);
+    boardJson(c, &s.l, &json.writer) catch return c.internal("cannot write the board", .{});
+    var page: Writer.Allocating = .init(c.arena);
+    html.render(c.arena, json.written(), .{ .refresh_seconds = refresh }, &page.writer) catch |e|
+        return c.internal("cannot render the board page: {t}", .{e});
+    const path = dest orelse {
+        c.out.writeAll(page.written()) catch return c.internal("cannot write the board", .{});
+        return;
+    };
+    var af = Io.Dir.cwd().createFileAtomic(c.io, path, .{ .replace = true }) catch |e|
+        return c.internal("cannot write {s}: {t}", .{ path, e });
+    defer af.deinit(c.io);
+    var buf: [4096]u8 = undefined;
+    var fw = af.file.writer(c.io, &buf);
+    fw.interface.writeAll(page.written()) catch |e| return c.internal("cannot write {s}: {t}", .{ path, e });
+    fw.interface.flush() catch |e| return c.internal("cannot write {s}: {t}", .{ path, e });
+    af.replace(c.io) catch |e| return c.internal("cannot replace {s}: {t}", .{ path, e });
+    c.out.print("wrote {s}\n", .{path}) catch {};
+    c.out.flush() catch {};
+}
+
+const LogStamp = struct { size: u64, mtime: i96 };
+
+fn logStamp(c: *Ctx) Fail!LogStamp {
+    const p = c.path(&.{"events.jsonl"}) catch return c.internal("out of memory", .{});
+    const st = Io.Dir.cwd().statFile(c.io, p, .{}) catch |e| switch (e) {
+        error.FileNotFound => return .{ .size = 0, .mtime = 0 },
+        else => return c.internal("cannot stat {s}: {t}", .{ p, e }),
+    };
+    return .{ .size = st.size, .mtime = st.mtime.nanoseconds };
+}
+
+/// `q board --html [--watch] [--out FILE]`. A log that does not replay ends
+/// the watch with exit 1, as everywhere else: a page that looked fine while
+/// the log was broken would be a silent green.
+fn boardHtml(c: *Ctx, rest: []const []const u8) Fail!void {
+    var out_path: ?[]const u8 = null;
+    var watch = false;
+    var refresh_given = false;
+    var refresh: ?u32 = watch_refresh_s;
+    var i: usize = 0;
+    while (i < rest.len) : (i += 1) {
+        const a = rest[i];
+        if (std.mem.eql(u8, a, "--html")) continue;
+        if (std.mem.eql(u8, a, "--watch")) {
+            watch = true;
+        } else if (std.mem.eql(u8, a, "--refresh") and i + 1 < rest.len) {
+            i += 1;
+            const n = std.fmt.parseInt(u32, rest[i], 10) catch return c.usage("--refresh takes whole seconds (0 = no refresh)", .{});
+            refresh = if (n == 0) null else n;
+            refresh_given = true;
+        } else if (std.mem.eql(u8, a, "--out") and i + 1 < rest.len) {
+            i += 1;
+            out_path = rest[i];
+        } else return c.usage("board --html takes --watch, --refresh N and --out FILE", .{});
+    }
+    const to_stdout = if (out_path) |p| std.mem.eql(u8, p, "-") else false;
+    if (watch and to_stdout) return c.usage("--watch needs a file: --out - writes to stdout", .{});
+    if (refresh_given and !watch) return c.usage("--refresh only applies with --watch", .{});
+    const dest: ?[]const u8 = if (to_stdout) null else out_path orelse c.path(&.{"board.html"}) catch return c.internal("out of memory", .{});
+    try renderPage(c, dest, if (watch) refresh else null);
+    if (!watch) return;
+
+    c.err.print("q: watching {s}; Ctrl-C to stop\n", .{c.path(&.{"events.jsonl"}) catch "events.jsonl"}) catch {};
+    c.err.flush() catch {};
+    var last = try logStamp(c);
+    var last_render = c.now;
+    while (true) {
+        c.io.sleep(.fromMilliseconds(watch_poll_ms), .real) catch return;
+        const now = if (c.clock_fixed) c.now else Io.Timestamp.now(c.io, .real).toSeconds();
+        const st = try logStamp(c);
+        const changed = st.size != last.size or st.mtime != last.mtime;
+        if (!changed and (c.clock_fixed or now - last_render < watch_regen_s)) continue;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        var c2 = c.*;
+        c2.arena = arena.allocator();
+        c2.now = now;
+        try renderPage(&c2, dest, refresh);
+        last = st;
+        last_render = now;
+    }
+}
+
 // ------------------------------------------------------------------ verbs
 
 const usage_text =
@@ -728,6 +833,9 @@ const usage_text =
     \\  q host amend <file.toml>       new host revision
     \\  q host hold | q host release   close or reopen the gate for every job
     \\  q board [--json]               the board, as text or as work-queue/board/v1 JSON
+    \\  q board --html [--watch [--refresh N]] [--out FILE]
+    \\                                 the board as one static page (default FILE: $WQ_HOME/board.html,
+    \\                                 `-` is stdout); --watch rewrites it when events.jsonl changes (page refresh N s, default 10, 0 = none)
     \\
 ;
 
@@ -743,6 +851,10 @@ fn run(c: *Ctx, args: []const []const u8) Fail!void {
     const verb = args[0];
     const rest = args[1..];
 
+    if (std.mem.eql(u8, verb, "board") and for (rest) |a| {
+        if (std.mem.eql(u8, a, "--html")) break true;
+    } else false) return boardHtml(c, rest);
+
     if (std.mem.eql(u8, verb, "board") or std.mem.eql(u8, verb, "gate")) {
         var s = try open(c, false);
         defer close(c, &s);
@@ -750,11 +862,9 @@ fn run(c: *Ctx, args: []const []const u8) Fail!void {
         if (std.mem.eql(u8, verb, "board")) {
             if (rest.len == 1 and std.mem.eql(u8, rest[0], "--json")) {
                 boardJson(c, &s.l, c.out) catch return c.internal("cannot write the board", .{});
-            } else if (rest.len == 1 and std.mem.eql(u8, rest[0], "--html")) {
-                return c.usage("board --html is tier 3 and not built yet", .{});
             } else if (rest.len == 0) {
                 boardText(c, &s.l, c.out) catch return c.internal("cannot write the board", .{});
-            } else return c.usage("board takes --json, or nothing", .{});
+            } else return c.usage("board takes --json, --html [--watch] [--out FILE], or nothing", .{});
             return;
         }
         if (rest.len != 1) return c.usage("gate <id>", .{});
@@ -864,7 +974,7 @@ fn body(init: std.process.Init, io: Io, arena: std.mem.Allocator, out: *Writer, 
         err.writeAll("q: WQ_NOW is not an RFC 3339 UTC time like 2026-11-18T09:00:00Z\n") catch {};
         return .usage;
     } else Io.Timestamp.now(io, .real).toSeconds();
-    var c = Ctx{ .io = io, .arena = arena, .home = home, .now = now, .out = out, .err = err };
+    var c = Ctx{ .io = io, .arena = arena, .home = home, .now = now, .out = out, .err = err, .clock_fixed = env.get("WQ_NOW") != null };
     const args = arena.alloc([]const u8, argv.len - 1) catch return .internal;
     for (argv[1..], 0..) |a, i| args[i] = a;
     run(&c, args) catch |e| return switch (e) {
@@ -881,4 +991,5 @@ test {
     _ = time;
     _ = jcs;
     _ = ledger;
+    _ = html;
 }

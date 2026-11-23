@@ -121,7 +121,7 @@ Enabled only for a running checkpointable job while a more urgent job is ready
 before any job is added (see Store)
 |`q host hold` / `q host release` |HostHoldOn / HostHoldOff |
 |`q board [--json\|--html]` |none |read-only view; plain text without a flag;
-`--html` exits 2 until tier 3 builds it
+`--html` writes a static page (tier 3)
 |===
 
 Exit codes: `0` done; `3` refused because the action is not enabled, with the
@@ -213,6 +213,14 @@ can use a fixture until tier 1 lands.
 . Plain HTML and CSS. Plain JavaScript only if it is needed.
 . Golden tests: fixture JSON in, exact HTML out. One accessibility pass
   (contrast, headings, no colour-only state).
+
+Status (tier 3 PR): `q board --html [--watch [--refresh N]] [--out FILE]` renders from the
+board JSON through `src/cli/html.zig` (pure; golden pages in `tests/cli/html/`,
+hostile input included, wired into `just wq-cli`). Default FILE is
+`$WQ_HOME/board.html`. A watched page is also rewritten every 60 s so lease
+countdowns stay current. Dropped jobs sit under the board, not in a column.
+`--refresh N` sets the watched page's meta refresh (default 10 s, 0 = none; owner choice).
+Accessibility pass and its open finding (meta refresh): `BOARD-A11Y.adoc`.
 
 == Not in the MVP
 
