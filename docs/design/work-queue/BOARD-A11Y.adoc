@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Board page: accessibility pass (tier 3)
+:toc: macro
+
+Status: one pass, 2026-11-18, against the Adjust baseline (WCAG 2.1 AA).
+Page: `src/cli/html.zig`. Fixtures: `tests/cli/html/`.
+
+toc::[]
+
+== How it was checked
+
+* Contrast: the palette is data in `html.zig` (`tones`); the CSS is written
+  from it; `zig build test` computes the WCAG ratio of every text pair and
+  every meaningful mark, light and dark, and fails below 4.5 (text) or 3
+  (marks). Measured: worst text 5.34:1, worst mark 4.44:1.
+* Rendered page: Chromium (preinstalled) at 1280x900 and 360x740, light and
+  dark, on the `board` fixture (a job in every state plus hostile strings). Per run: computed colour of every
+  text node against its effective background, heading levels, horizontal
+  overflow, script elements, `on*` attributes. Worst rendered text contrast
+  6.23:1 (light), 6.63:1 (dark). That probe is an ad hoc script, not
+  committed (the repo forbids Node); the contrast check above is.
+
+== Results
+
+[cols="2,1,4",options="header"]
+|===
+|Item |Result |Evidence
+|Contrast, text, light and dark |pass |worst 5.34:1 (tokens), 6.23:1 / 6.63:1 (rendered)
+|Contrast, state edges and meter marks (non-text, 3:1) |pass |worst 4.44:1
+|Heading order |pass, after one fix |h1, then h2 (headroom, shares, jobs), h3 per column, h4 per card. First run found h2 to h4 under "Dropped"; the dropped list is now an h3 under "Jobs by state"
+|No state by colour alone |pass |every card carries its state as a word and the `Waiting:`/`Held by:`/`Progress:` line; warning tiles carry "(FULL)", "(NONE FREE)", "ON"; meters carry numbers plus "over/under/on target"
+|Phone width (360 px) |pass |no horizontal overflow on either fixture; columns and share rows stack; long titles wrap (`overflow-wrap:anywhere`)
+|Language, landmarks |pass |`lang="en"`, `header`/`main`/`footer`, labelled sections
+|Scripts |none |no script element; CSP `default-src 'none'` with the one stylesheet pinned by SHA-256 hash (no `unsafe-inline`, no style attributes; meter bars are inline SVG)
+|===
+
+== Findings that are not fixed
+
+. *Meta refresh (WCAG 2.2.1 Timing Adjustable; technique F41).* TIERS.adoc
+  requires the watched page to carry a meta refresh, and it does (10 s,
+  `--watch` only; the one-shot page has none). A page that reloads itself
+  can disturb screen-reader and magnifier users and cannot be paused. This
+  is a conflict between the brief and the baseline, not a bug. Owner decision (2026-11-18): the interval is configurable, `--refresh N`,
+  default 10 s, `0` omits the meta. The default still reloads, so a
+  WCAG-clean deployment must pass `--refresh 0`.
+. *Not tested:* a real screen reader, forced-colors / high-contrast mode,
+  200 % and 400 % zoom (360 px width was tested), keyboard use beyond the
+  one native `<details>` control.
+. *Bidi controls* in job text are shown as U+FFFD rather than honoured. That
+  is a safety choice, and it changes what a title with a deliberate RTL
+  override displays.

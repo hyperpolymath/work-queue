@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-JCUt0wRONW2jU9Sj22o1tyRnTGq9AqnDq3ZdfF23/e0='; base-uri 'none'; form-action 'none'">
+<title>Work Queue Board</title>
+<style>
+:root{--bg:#f6f5f1;--panel:#ffffff;--ink:#1d1d1b;--muted:#5c5b57;--line:#dcdad3;--meter-bg:#e6e4dd;--meter:#2a64a3;--warn:#a82f28;--queued:#76766f;--ready:#2a64a3;--admitted:#7a4fb5;--running:#1b7a50;--checkpoint:#a86a0a;--held:#b3362f;--completed:#4b4b48;--dropped:#6a6a66;}
+@media (prefers-color-scheme: dark){:root{--bg:#17171a;--panel:#222226;--ink:#ecebe6;--muted:#a8a8a2;--line:#38383e;--meter-bg:#2e2e34;--meter:#6aa6e8;--warn:#ff8a82;--queued:#9a9a94;--ready:#6aa6e8;--admitted:#b394e8;--running:#42c08a;--checkpoint:#e4a43a;--held:#ff8a82;--completed:#a8a8a2;--dropped:#8c8c86;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:15px;margin:0 0 8px}
+h3{font-size:14px;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+h3 small{color:var(--muted);font-weight:400;font-size:12px}
+h4{font-size:14px;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 16px;font-size:14px}
+p,ul{margin:0;padding:0}
+ul{list-style:none}
+section{margin-bottom:16px}
+bdi,.wrap{overflow-wrap:anywhere}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.tile b{display:block;font-size:13px;color:var(--muted);font-weight:500}
+.tile span{font-size:18px}
+.tile.warn{border-color:var(--warn)}
+.tile.warn span{color:var(--warn);font-weight:700}
+.shares{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.shares .note{color:var(--muted);font-size:13px;margin:0 0 8px}
+.share{display:grid;grid-template-columns:minmax(0,170px) 1fr minmax(0,210px);gap:8px;align-items:center;font-size:14px;margin:6px 0}
+.bar{display:block;width:100%;height:10px;background:var(--meter-bg);border-radius:5px;overflow:hidden}
+.bar .fill{fill:var(--meter)}
+.bar .tick{stroke:var(--ink);stroke-width:3px;vector-effect:non-scaling-stroke}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:120px}
+.none{color:var(--muted);font-size:13px}
+.card{border:1px solid var(--line);border-left:6px solid var(--c);border-radius:6px;padding:8px;margin-bottom:8px;font-size:14px}
+.card .m{color:var(--muted);font-size:13px}
+.card .why{margin-top:6px;padding:4px 6px;border-radius:4px;background:var(--meter-bg);font-size:13px}
+.tag{display:inline-block;font-size:12px;padding:1px 6px;border-radius:10px;border:1px solid var(--muted);margin:0 4px 2px 0}
+.tag.st{font-weight:700;color:var(--ink);border-color:var(--c)}
+.queued{--c:var(--queued)}.ready{--c:var(--ready)}.admitted{--c:var(--admitted)}.running{--c:var(--running)}
+.checkpoint{--c:var(--checkpoint)}.held{--c:var(--held)}.completed{--c:var(--completed)}.dropped{--c:var(--dropped)}
+.col.dropped{margin-top:10px;min-height:0}
+summary{cursor:pointer;font-weight:600}
+details ul{margin-top:8px}
+footer{margin-top:16px;font-size:13px;color:var(--muted)}
+@media (max-width:560px){
+body{padding:12px}
+.share{grid-template-columns:1fr;gap:2px}
+.board{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Work Queue Board</h1>
+<p class="sub">Read-only view, generated <bdi>2026-11-18T10:00:00Z</bdi> from <span class="wrap">work-queue/board/v1</span>. Run <code>q board</code> for the text form.</p>
+</header>
+<main>
+<section aria-labelledby="h-head">
+<h2 id="h-head">Host headroom</h2>
+<div class="strip">
+<div class="tile"><b>Unreserved</b><span>5 GiB</span></div>
+<div class="tile"><b>Reserved</b><span>11 of 16 GiB</span></div>
+<div class="tile warn"><b>Heavy slots</b><span>1 of 1 in use (FULL)</span></div>
+<div class="tile"><b>Workers</b><span>2 running of 3</span></div>
+<div class="tile warn"><b>Host hold</b><span>ON (no job is admitted)</span></div>
+</div>
+</section>
+<section aria-labelledby="h-shares">
+<div class="shares">
+<h2 id="h-shares">Category shares</h2>
+<p class="note">Bar = share of the reservation held now; tick = target. Equal priorities go to the category furthest below its target.</p>
+<ul>
+<li class="share"><span class="wrap"><bdi>debt</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
+<li class="share"><span class="wrap"><bdi>finishing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="27" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>27% of 20%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>proofing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="55" height="10"/><line class="tick" x1="40" x2="40" y1="0" y2="10"/></svg><span>55% of 40%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>tidying</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
+<li class="share"><span class="wrap"><bdi>&lt;img src=x onerror=alert(1)&gt;</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="75" height="10"/><line class="tick" x1="50" x2="50" y1="0" y2="10"/></svg><span>75% of 50%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="25" height="10"/><line class="tick" x1="50" x2="50" y1="0" y2="10"/></svg><span>25% of 50%, under target</span></li>
+</ul>
+</div>
+</section>
+<section aria-labelledby="h-jobs">
+<h2 id="h-jobs">Jobs by state</h2>
+<div class="board">
+<section class="col queued" aria-labelledby="c-queued">
+<h3 id="c-queued"><span>Queued (1)</span><small>captured, incomplete record</small></h3>
+<ul>
+<li class="card queued">
+<h4><bdi>Investigate display-container crashes</bdi></h4>
+<p class="m"><span class="tag st">queued</span><span class="tag"><bdi>debt</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>debt-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Waiting: admission record incomplete: owner, checkpoint</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col ready" aria-labelledby="c-ready">
+<h3 id="c-ready"><span>Ready (3)</span><small>record complete, awaiting admission</small></h3>
+<ul>
+<li class="card ready">
+<h4><bdi>&lt;script&gt;alert(1)&lt;/script&gt;</bdi></h4>
+<p class="m"><span class="tag st">ready</span><span class="tag"><bdi>&lt;img src=x onerror=alert(1)&gt;</bdi></span><span class="tag">P1</span> <bdi>chat:&lt;b&gt;x&lt;/b&gt;&amp;amp;</bdi> &middot; <bdi>a&quot;&gt;&lt;script&gt;alert(&#39;id&#39;)&lt;/script&gt;</bdi></p>
+<p class="m">needs 2 GiB, estimate</p>
+<p class="why"><bdi>Waiting: &lt;/p&gt;&lt;script&gt;alert(&quot;line&quot;)&lt;/script&gt; &amp; &#39;quotes&#39;</bdi></p>
+</li>
+<li class="card ready">
+<h4><bdi>Proven local proof/ABI validation batch with a very long title that has to wrap on a phone screen without overflowing</bdi></h4>
+<p class="m"><span class="tag st">ready</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-1</bdi></p>
+<p class="m">needs 6 GiB, measured, rejected 1&times;</p>
+<p class="why"><bdi>Waiting: the heavy slot is taken</bdi></p>
+</li>
+<li class="card ready">
+<h4><bdi>Scanner handover follow-up</bdi></h4>
+<p class="m"><span class="tag st">ready</span><span class="tag"><bdi>finishing</bdi></span><span class="tag">P3</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>fin-2</bdi></p>
+<p class="m">needs 3 GiB, estimate</p>
+<p class="why"><bdi>Waiting: not enough unreserved RAM for this job</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col admitted" aria-labelledby="c-admitted">
+<h3 id="c-admitted"><span>Admitted (1)</span><small>reservation held, not yet started</small></h3>
+<ul>
+<li class="card admitted">
+<h4><bdi>Five SPDX header edits</bdi></h4>
+<p class="m"><span class="tag st">admitted</span><span class="tag"><bdi>tidying</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>tidy-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Waiting: admitted, awaiting start on a worker</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col running" aria-labelledby="c-running">
+<h3 id="c-running"><span>Running (2)</span><small>lease held by one worker</small></h3>
+<ul>
+<li class="card running">
+<h4><bdi>Atoma merge path</bdi></h4>
+<p class="m"><span class="tag st">running</span><span class="tag"><bdi>finishing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>fin-1</bdi></p>
+<p class="m">needs 3 GiB, measured; lease <bdi>w1</bdi> until <bdi>2026-11-18T10:12:00Z</bdi></p>
+<p class="why"><bdi>Progress: running on w1, lease 12m left</bdi></p>
+</li>
+<li class="card running">
+<h4><bdi>evil title � nul �[31m esc</bdi></h4>
+<p class="m"><span class="tag st">running</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P2</span> <bdi>o&#39; onmouseover=&#39;alert(1)</bdi> &middot; <bdi>run-1</bdi></p>
+<p class="m">needs 2 GiB, measured, rejected 2&times;; lease <bdi>w1</bdi> until <bdi>2026-11-18T10:12:00Z</bdi></p>
+<p class="why"><bdi>Progress: running on w1, lease 12m left</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col checkpoint" aria-labelledby="c-checkpoint">
+<h3 id="c-checkpoint"><span>Checkpoint (1)</span><small>evidence under review</small></h3>
+<ul>
+<li class="card checkpoint">
+<h4><bdi>UAA runtime registry gate</bdi></h4>
+<p class="m"><span class="tag st">checkpoint</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-2</bdi></p>
+<p class="m">needs 5 GiB, measured</p>
+<p class="why"><bdi>Waiting: checkpoint taken, awaiting q accept or q reject</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col held" aria-labelledby="c-held">
+<h3 id="c-held"><span>Held (2)</span><small>deliberately stopped</small></h3>
+<ul>
+<li class="card held">
+<h4><bdi>Headroom helper processes</bdi></h4>
+<p class="m"><span class="tag st">held</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-3</bdi></p>
+<p class="m">needs 2 GiB, estimate, rejected 2&times;</p>
+<p class="why"><bdi>Held by: lease expired; q release returns it to the gate</bdi></p>
+</li>
+<li class="card held">
+<h4><bdi>javascript:alert(1) &amp;lt;already&amp;gt; &amp;#60; &quot;quoted&quot; &#39;single&#39;</bdi></h4>
+<p class="m"><span class="tag st">held</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P3</span> <bdi>me</bdi> &middot; <bdi>held-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Held by: owner; &lt;/li&gt;&lt;li class=&quot;card&quot;&gt;fake card</bdi></p>
+</li>
+</ul>
+</section>
+<section class="col completed" aria-labelledby="c-completed">
+<h3 id="c-completed"><span>Completed (1)</span><small>finished jobs</small></h3>
+<ul>
+<li class="card completed">
+<h4><bdi>RefC Bits8 word proof packet</bdi></h4>
+<p class="m"><span class="tag st">completed</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-4</bdi></p>
+<p class="m">needs 2 GiB, measured</p>
+<p class="why"><bdi>Progress: completed</bdi></p>
+</li>
+</ul>
+</section>
+</div>
+<section class="col dropped" aria-labelledby="c-dropped">
+<h3 id="c-dropped"><span>Dropped (2)</span><small>removed from the queue</small></h3>
+<details>
+<summary>Show dropped jobs</summary>
+<ul>
+<li class="card dropped">
+<h4><bdi>Superseded cleanup</bdi></h4>
+<p class="m"><span class="tag st">dropped</span><span class="tag"><bdi>debt</bdi></span><span class="tag">P4</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>debt-2</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Progress: dropped</bdi></p>
+</li>
+<li class="card dropped">
+<h4><bdi>&lt;/details&gt;&lt;h1&gt;dropped&lt;/h1&gt;</bdi></h4>
+<p class="m"><span class="tag st">dropped</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P4</span> <bdi>me</bdi> &middot; <bdi>drop-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Progress: dropped</bdi></p>
+</li>
+</ul>
+</details>
+</section>
+</section>
+</main>
+<footer>Every card shows one line beginning &ldquo;Waiting:&rdquo;, &ldquo;Held by:&rdquo; or &ldquo;Progress:&rdquo;. If a job cannot produce that line, the board has a bug, not the job.</footer>
+</body>
+</html>
