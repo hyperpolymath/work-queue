@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Route to MVP
+
+The approach is to prototype in rounds, with the TLA+ spec as the oracle.
+Each round keeps `just wq-conformance` green and the mutation check at
+0 survived and 0 invalid, and any new state transition goes into the spec
+first. The binding interfaces are in xref:TIERS.adoc[TIERS.adoc].
+
+[cols="1,3,1,2",options="header"]
+|===
+|Tier |Delivers |State (2026-11-23) |Evidence still owed
+|0 |Spec, TLC results, oracle, pure core, conformance and mutation checks |merged (#1, #2) |none
+|1 |Ledger and gate: job table of any size, category shares (spec first), event-log store, `q` CLI, `q board --json` |merged (#3) |none
+|2 |Launching under limits: `q run` under `systemd-run` with memory and CPU caps, heartbeats, kill on lapse or preempt |merged (#4) |the real cgroup acceptance run, see below
+|3 |Live board: static HTML from the board JSON, regenerated on change; no server |draft (#6) |owner review; refresh default versus WCAG, see findings
+|===
+
+== Evidence each tier shows
+
+* *Tier 1:* every verb end to end on a scratch `$WQ_HOME`; conformance and
+  mutants green; the board JSON matches TIERS.adoc.
+* *Tier 2:* unit tests with a fake limiter in CI. The real acceptance run, a
+  memory hog killed at `MemoryMax`, needs a Linux host with a systemd user
+  session that the owner names. Not The-Titanic while it is memory-starved.
+* *Tier 3:* golden tests (fixture JSON in, exact HTML out, including hostile
+  input) and an accessibility pass, recorded in `BOARD-A11Y.adoc` on #6.
+
+== Not in the MVP
+
+Cloud workers, spending limits, the BoJ coord-bus bridge, a Windows runner,
+a served board, multi-host. Each is a separate decision for the owner.

@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Work queue: design and status
+:toc: macro
+
+A small BOINC-style work queue for one owner's estate of repositories and
+agent sessions: a few workers, category shares, an admission gate, hard
+resource limits, priorities, single ownership of each obligation, and
+recovery through leases and checkpoints.
+
+This folder is the map. Each topic has one home; the pages below link to it
+rather than copy it.
+
+toc::[]
+
+== Where things are
+
+[cols="1,2",options="header"]
+|===
+|Document |What it covers
+|xref:ROUTE-TO-MVP.adoc[Route to MVP] |The tiers, their state, and the evidence each must show
+|xref:FINDINGS.adoc[Findings and decisions] |What the model check found, owner decisions, open questions
+|xref:CROSS-PROJECT.adoc[Cross-project items] |Work this repository needs that belongs elsewhere
+|xref:CONTRACT.adoc[Job contract] |The job record, states, rules and verbs
+|xref:TIERS.adoc[Tier handoff contract] |Shared interfaces: store, `q` CLI, board JSON
+|xref:LAUNCH.adoc[Launching under limits] |`q run` under `systemd-run`
+|link:board-mock.html[Board mock] |The original sketch of the human view
+|xref:../../../verification/proofs/tlaplus/workqueue/README.adoc[Spec, model check and oracle] |The TLA+ models, TLC results, oracle format, conformance and mutation checks
+|===
+
+== Status (2026-11-23)
+
+* *On main:* the spec and both models, the pure Zig core checked against every
+  TLC state and transition (three oracles), category shares, the event-log
+  store, the `q` CLI with `q board --json`, and `q run`. PRs #1 to #5.
+* *Open:* #6, the live board (`q board --html`), a draft.
+* *Not yet run:* the real memory-limit acceptance test for `q run` (needs a
+  Linux host with a systemd user session).
+
+== Rebuild and check
+
+----
+just wq-conformance   # TLC model check, all oracles, conformance
+just wq-cli           # the q CLI golden scenario on a scratch $WQ_HOME
+just wq-mutants       # mutation check (about 12 minutes)
+----
+
+The design notes were first drafted for the GitHub wiki; they live here
+instead so they are versioned and reviewed with the code.

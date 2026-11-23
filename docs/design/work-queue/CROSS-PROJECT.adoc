@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Cross-project items
+
+Work this repository needs but that belongs elsewhere. State as of
+2026-11-23; "reported" means a session said so and it was not checked here.
+
+[cols="2,3,1",options="header"]
+|===
+|Where |What |State
+|`hyperpolymath/proven-cicd-and-workflows` |CI-gate profile for this repository (`profiles/ci-gate/hyperpolymath/work-queue.json`). |merged in #150 (reported); the gate now gives verdicts instead of failing closed
+|This repository, CI |The gate's verdict on main fails on `lock-sync-gate` (`actions.lock` out of step with the workflow YAML after the pin bump in #5) and on `proven-tests`. The verdict-grid `publish` job also fails. |open; upkeep for a cheaper model
+|This repository, template |Instantiate the template: the deed, CLAUDE.md, README and `www/` placeholders still describe `rsr-template-repo`. This keeps Canon lockstep, openssf-compliance, the Central Estate audit and mint-gates red. |open; upkeep for a cheaper model
+|This repository, settings |GitHub Pages: enable it (source: GitHub Actions) or remove the Pages workflow. |open; owner
+|This repository, wiki |The wiki still shows GitHub's default page. Point its Home at this folder, or turn the wiki off. |open; owner
+|`hyperpolymath/standards`, PROOF-POLICY |TLA+ model checking is not in the prover table. Add it for design-level state machines, or restate the obligations in Idris2. |open; owner
+|BoJ coord bus |A bridge is out of the MVP. Decide later whether the queue feeds the bus or the reverse. |open; owner
+|===
