@@ -82,7 +82,8 @@ neg "a torn append" '$ s/}$//'
 neg "a sequence gap" '3d'
 
 
-# 5. tier 3: the HTML board. Golden pages from fixture board JSON (the pure
+# 5. tier 3: the HTML board. One golden page from a fixture board JSON that has a job
+#    in every state plus hostile strings (the pure
 #    renderer, wq-render), hostile input included; the page of the real store
 #    is in transcript.txt (`board --html --out -`).
 render=$PWD/zig-out/bin/wq-render
@@ -94,20 +95,20 @@ check_html() { # name, produced file
   elif cmp -s "$produced" "$here/html/$name"; then echo "same     html/$name"
   else echo "DIFFERS  html/$name"; diff -u "$here/html/$name" "$produced" | head -40; fail=1; fi
 }
-for n in full hostile; do
-  "$render" <"$here/html/$n.board.json" >"$tmp/$n.html"
+for n in board; do
+  "$render" <"$here/html/$n.json" >"$tmp/$n.html"
   check_html "$n.html" "$tmp/$n.html"
 done
 # the refresh meta is an option of the renderer, not a second golden page
-"$render" --refresh 10 <"$here/html/full.board.json" >"$tmp/full-refresh.html"
-if grep -q '<meta http-equiv="refresh" content="10">' "$tmp/full-refresh.html" && ! grep -q 'http-equiv="refresh"' "$tmp/full.html"; then
+"$render" --refresh 10 <"$here/html/board.json" >"$tmp/full-refresh.html"
+if grep -q '<meta http-equiv="refresh" content="10">' "$tmp/full-refresh.html" && ! grep -q 'http-equiv="refresh"' "$tmp/board.html"; then
   echo "refresh  renderer adds the meta only when asked"; else echo "refresh meta wrong in the renderer"; fail=1; fi
 # the page needs no unsafe-inline: no style attribute, and the CSP names the one stylesheet by hash
-if grep -q 'unsafe-inline\| style=' "$tmp/full.html" || ! grep -q "style-src 'sha256-" "$tmp/full.html"; then
+if grep -q 'unsafe-inline\| style=' "$tmp/board.html" || ! grep -q "style-src 'sha256-" "$tmp/board.html"; then
   echo "CSP/style: the page needs unsafe-inline"; fail=1; else echo "csp      no unsafe-inline, stylesheet pinned by hash"; fi
 # hostile input must stay inert text: no script element, no handler attribute, no raw bidi override
-if grep -Eq '<(script|img)|<[^>]* on[a-z]+=' "$tmp/hostile.html" || grep -q $'\xe2\x80\xae' "$tmp/hostile.html"; then
-  echo "UNESCAPED hostile input in html/hostile.html"; fail=1; else echo "inert    hostile input"; fi
+if grep -Eq '<(script|img)|<[^>]* on[a-z]+=' "$tmp/board.html" || grep -q $'\xe2\x80\xae' "$tmp/board.html"; then
+  echo "UNESCAPED hostile input in html/board.html"; fail=1; else echo "inert    hostile input"; fi
 if "$render" <<<'{"schema":"work-queue/board/v2"}' >/dev/null 2>&1; then echo "ACCEPTED a bad schema"; fail=1; else echo "refused  a board with the wrong schema"; fi
 # read-only: rendering the real store must not change events.jsonl or the job/host records
 before=$(cd "$WQ_HOME" && find . -type f ! -name board.html -exec sha256sum {} + | sort)

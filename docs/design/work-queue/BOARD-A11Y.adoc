@@ -15,7 +15,7 @@ toc::[]
   every meaningful mark, light and dark, and fails below 4.5 (text) or 3
   (marks). Measured: worst text 5.34:1, worst mark 4.44:1.
 * Rendered page: Chromium (preinstalled) at 1280x900 and 360x740, light and
-  dark, on `full` and `hostile` fixtures. Per run: computed colour of every
+  dark, on the `board` fixture (a job in every state plus hostile strings). Per run: computed colour of every
   text node against its effective background, heading levels, horizontal
   overflow, script elements, `on*` attributes. Worst rendered text contrast
   6.23:1 (light), 6.63:1 (dark). That probe is an ad hoc script, not

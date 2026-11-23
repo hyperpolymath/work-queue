@@ -63,10 +63,10 @@ body{padding:12px}
 <section aria-labelledby="h-head">
 <h2 id="h-head">Host headroom</h2>
 <div class="strip">
-<div class="tile warn"><b>Unreserved</b><span>0 GiB (NONE FREE)</span></div>
-<div class="tile"><b>Reserved</b><span>4 of 4 GiB</span></div>
+<div class="tile"><b>Unreserved</b><span>5 GiB</span></div>
+<div class="tile"><b>Reserved</b><span>11 of 16 GiB</span></div>
 <div class="tile warn"><b>Heavy slots</b><span>1 of 1 in use (FULL)</span></div>
-<div class="tile"><b>Workers</b><span>1 running of 2</span></div>
+<div class="tile"><b>Workers</b><span>2 running of 3</span></div>
 <div class="tile warn"><b>Host hold</b><span>ON (no job is admitted)</span></div>
 </div>
 </section>
@@ -75,6 +75,10 @@ body{padding:12px}
 <h2 id="h-shares">Category shares</h2>
 <p class="note">Bar = share of the reservation held now; tick = target. Equal priorities go to the category furthest below its target.</p>
 <ul>
+<li class="share"><span class="wrap"><bdi>debt</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
+<li class="share"><span class="wrap"><bdi>finishing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="27" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>27% of 20%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>proofing</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="55" height="10"/><line class="tick" x1="40" x2="40" y1="0" y2="10"/></svg><span>55% of 40%, over target</span></li>
+<li class="share"><span class="wrap"><bdi>tidying</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="9" height="10"/><line class="tick" x1="20" x2="20" y1="0" y2="10"/></svg><span>9% of 20%, under target</span></li>
 <li class="share"><span class="wrap"><bdi>&lt;img src=x onerror=alert(1)&gt;</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="75" height="10"/><line class="tick" x1="50" x2="50" y1="0" y2="10"/></svg><span>75% of 50%, over target</span></li>
 <li class="share"><span class="wrap"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="fill" width="25" height="10"/><line class="tick" x1="50" x2="50" y1="0" y2="10"/></svg><span>25% of 50%, under target</span></li>
 </ul>
@@ -84,11 +88,18 @@ body{padding:12px}
 <h2 id="h-jobs">Jobs by state</h2>
 <div class="board">
 <section class="col queued" aria-labelledby="c-queued">
-<h3 id="c-queued"><span>Queued (0)</span><small>captured, incomplete record</small></h3>
-<p class="none">No jobs in this state.</p>
+<h3 id="c-queued"><span>Queued (1)</span><small>captured, incomplete record</small></h3>
+<ul>
+<li class="card queued">
+<h4><bdi>Investigate display-container crashes</bdi></h4>
+<p class="m"><span class="tag st">queued</span><span class="tag"><bdi>debt</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>debt-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Waiting: admission record incomplete: owner, checkpoint</bdi></p>
+</li>
+</ul>
 </section>
 <section class="col ready" aria-labelledby="c-ready">
-<h3 id="c-ready"><span>Ready (1)</span><small>record complete, awaiting admission</small></h3>
+<h3 id="c-ready"><span>Ready (3)</span><small>record complete, awaiting admission</small></h3>
 <ul>
 <li class="card ready">
 <h4><bdi>&lt;script&gt;alert(1)&lt;/script&gt;</bdi></h4>
@@ -96,15 +107,40 @@ body{padding:12px}
 <p class="m">needs 2 GiB, estimate</p>
 <p class="why"><bdi>Waiting: &lt;/p&gt;&lt;script&gt;alert(&quot;line&quot;)&lt;/script&gt; &amp; &#39;quotes&#39;</bdi></p>
 </li>
+<li class="card ready">
+<h4><bdi>Proven local proof/ABI validation batch with a very long title that has to wrap on a phone screen without overflowing</bdi></h4>
+<p class="m"><span class="tag st">ready</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-1</bdi></p>
+<p class="m">needs 6 GiB, measured, rejected 1&times;</p>
+<p class="why"><bdi>Waiting: the heavy slot is taken</bdi></p>
+</li>
+<li class="card ready">
+<h4><bdi>Scanner handover follow-up</bdi></h4>
+<p class="m"><span class="tag st">ready</span><span class="tag"><bdi>finishing</bdi></span><span class="tag">P3</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>fin-2</bdi></p>
+<p class="m">needs 3 GiB, estimate</p>
+<p class="why"><bdi>Waiting: not enough unreserved RAM for this job</bdi></p>
+</li>
 </ul>
 </section>
 <section class="col admitted" aria-labelledby="c-admitted">
-<h3 id="c-admitted"><span>Admitted (0)</span><small>reservation held, not yet started</small></h3>
-<p class="none">No jobs in this state.</p>
+<h3 id="c-admitted"><span>Admitted (1)</span><small>reservation held, not yet started</small></h3>
+<ul>
+<li class="card admitted">
+<h4><bdi>Five SPDX header edits</bdi></h4>
+<p class="m"><span class="tag st">admitted</span><span class="tag"><bdi>tidying</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>tidy-1</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Waiting: admitted, awaiting start on a worker</bdi></p>
+</li>
+</ul>
 </section>
 <section class="col running" aria-labelledby="c-running">
-<h3 id="c-running"><span>Running (1)</span><small>lease held by one worker</small></h3>
+<h3 id="c-running"><span>Running (2)</span><small>lease held by one worker</small></h3>
 <ul>
+<li class="card running">
+<h4><bdi>Atoma merge path</bdi></h4>
+<p class="m"><span class="tag st">running</span><span class="tag"><bdi>finishing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>fin-1</bdi></p>
+<p class="m">needs 3 GiB, measured; lease <bdi>w1</bdi> until <bdi>2026-11-18T10:12:00Z</bdi></p>
+<p class="why"><bdi>Progress: running on w1, lease 12m left</bdi></p>
+</li>
 <li class="card running">
 <h4><bdi>evil title � nul �[31m esc</bdi></h4>
 <p class="m"><span class="tag st">running</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P2</span> <bdi>o&#39; onmouseover=&#39;alert(1)</bdi> &middot; <bdi>run-1</bdi></p>
@@ -114,12 +150,25 @@ body{padding:12px}
 </ul>
 </section>
 <section class="col checkpoint" aria-labelledby="c-checkpoint">
-<h3 id="c-checkpoint"><span>Checkpoint (0)</span><small>evidence under review</small></h3>
-<p class="none">No jobs in this state.</p>
+<h3 id="c-checkpoint"><span>Checkpoint (1)</span><small>evidence under review</small></h3>
+<ul>
+<li class="card checkpoint">
+<h4><bdi>UAA runtime registry gate</bdi></h4>
+<p class="m"><span class="tag st">checkpoint</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P2</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-2</bdi></p>
+<p class="m">needs 5 GiB, measured</p>
+<p class="why"><bdi>Waiting: checkpoint taken, awaiting q accept or q reject</bdi></p>
+</li>
+</ul>
 </section>
 <section class="col held" aria-labelledby="c-held">
-<h3 id="c-held"><span>Held (1)</span><small>deliberately stopped</small></h3>
+<h3 id="c-held"><span>Held (2)</span><small>deliberately stopped</small></h3>
 <ul>
+<li class="card held">
+<h4><bdi>Headroom helper processes</bdi></h4>
+<p class="m"><span class="tag st">held</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-3</bdi></p>
+<p class="m">needs 2 GiB, estimate, rejected 2&times;</p>
+<p class="why"><bdi>Held by: lease expired; q release returns it to the gate</bdi></p>
+</li>
 <li class="card held">
 <h4><bdi>javascript:alert(1) &amp;lt;already&amp;gt; &amp;#60; &quot;quoted&quot; &#39;single&#39;</bdi></h4>
 <p class="m"><span class="tag st">held</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P3</span> <bdi>me</bdi> &middot; <bdi>held-1</bdi></p>
@@ -129,15 +178,28 @@ body{padding:12px}
 </ul>
 </section>
 <section class="col completed" aria-labelledby="c-completed">
-<h3 id="c-completed"><span>Completed (0)</span><small>finished jobs</small></h3>
-<p class="none">No jobs in this state.</p>
+<h3 id="c-completed"><span>Completed (1)</span><small>finished jobs</small></h3>
+<ul>
+<li class="card completed">
+<h4><bdi>RefC Bits8 word proof packet</bdi></h4>
+<p class="m"><span class="tag st">completed</span><span class="tag"><bdi>proofing</bdi></span><span class="tag">P1</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>proof-4</bdi></p>
+<p class="m">needs 2 GiB, measured</p>
+<p class="why"><bdi>Progress: completed</bdi></p>
+</li>
+</ul>
 </section>
 </div>
 <section class="col dropped" aria-labelledby="c-dropped">
-<h3 id="c-dropped"><span>Dropped (1)</span><small>removed from the queue</small></h3>
+<h3 id="c-dropped"><span>Dropped (2)</span><small>removed from the queue</small></h3>
 <details>
 <summary>Show dropped jobs</summary>
 <ul>
+<li class="card dropped">
+<h4><bdi>Superseded cleanup</bdi></h4>
+<p class="m"><span class="tag st">dropped</span><span class="tag"><bdi>debt</bdi></span><span class="tag">P4</span> <bdi>chat:01a1b7</bdi> &middot; <bdi>debt-2</bdi></p>
+<p class="m">needs 1 GiB, estimate</p>
+<p class="why"><bdi>Progress: dropped</bdi></p>
+</li>
 <li class="card dropped">
 <h4><bdi>&lt;/details&gt;&lt;h1&gt;dropped&lt;/h1&gt;</bdi></h4>
 <p class="m"><span class="tag st">dropped</span><span class="tag"><bdi>proofing &amp; &quot;solving&quot;</bdi></span><span class="tag">P4</span> <bdi>me</bdi> &middot; <bdi>drop-1</bdi></p>
