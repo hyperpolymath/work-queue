@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Findings and decisions
+
+== Findings
+
+*A job rejected for ever starves everything below it.* Liveness fails for the
+contract as drafted. j1 is rejected at checkpoint, returns to `ready`, is
+re-admitted, and is rejected again for ever. Because j1 is the most urgent
+ready job, j3 is never admitted. With the reject limit, j1 is held
+(`reject limit`) after two rejects and needs an owner edit, and both
+NoStarvation and Terminates hold. `scripts/wq-oracle.sh` fails if this
+counterexample ever disappears.
+
+*Why the first TLC runs never finished.* The reject counter grew without
+bound. It now stops at the limit; nothing reads it above that value, so no
+behaviour is lost.
+
+*A model can hide a rule from the mutants.* Tier 1's first shares model gave
+every job its own obligation, so the "share rival ignores obligation" mutant
+survived. Model 2 was changed so each conjunct of the share rule decides in
+some reachable state.
+
+*Correction to #1.* #1 reported 15 of 15 mutants caught. One did not compile,
+and the script counted that as a catch, so the priority rule was not
+mutation-tested. Fixed in #2: a mutant counts only if it compiles and then
+fails conformance.
+
+== Decisions (owner)
+
+* 2026-11-18: the TLA+ spec is the oracle, and code is checked against it.
+* 2026-11-18: the MVP is tiers 1, 2 and 3, each built in its own session.
+* 2026-11-18: this repository is the home.
+* 2026-11-18: full TLC and trace conformance, done as full-graph conformance.
+* 2026-11-18: the board's watched page refresh is configurable, `--refresh N`,
+  default 10 s, `0` omits it (#6).
+* 2026-11-23: the design notes live in this folder, not the wiki.
+
+== Open questions
+
+* The default 10 s refresh conflicts with WCAG 2.2.1 (no timed refresh
+  without user control). Keep the default, or default to `0`?
+* Amending a job or host record changes the spec's constants. Should the spec
+  model revisions, or should amend stay limited to `queued` and `dropped`
+  jobs?
+* Which Linux host runs tier 2's real cgroup acceptance test?
+* Reconcile with the earlier ChatGPT design file (RESOURCE-QUEUE-DESIGN.md)
+  once it can be read from a session.
