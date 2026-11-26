@@ -9,8 +9,9 @@ contract as drafted. j1 is rejected at checkpoint, returns to `ready`, is
 re-admitted, and is rejected again for ever. Because j1 is the most urgent
 ready job, j3 is never admitted. With the reject limit, j1 is held
 (`reject limit`) after two rejects and needs an owner edit, and both
-NoStarvation and Terminates hold. `scripts/wq-oracle.sh` fails if this
-counterexample ever disappears.
+NoStarvation and Terminates hold. `scripts/wq-oracle.sh` fails if TLC
+stops reporting a `Terminates` violation for `LiveAsDrafted`. It does not
+check that the reported lasso is this starvation trace.
 
 *Why the first TLC runs never finished.* The reject counter grew without
 bound. It now stops at the limit; nothing reads it above that value, so no
@@ -35,6 +36,7 @@ fails conformance.
 * 2026-11-18: the board's watched page refresh is configurable, `--refresh N`,
   default 10 s, `0` omits it (#6).
 * 2026-11-23: the design notes live in this folder, not the wiki.
+* 2026-11-25: the plan after the MVP, in xref:ULTRAPLAN.adoc[ULTRAPLAN.adoc]: order A, B, C then D and E; `just repo-init` as is; the memory-limit test both in CI and on a real host; TLAPS for the proof for any number of jobs.
 
 == Open questions
 

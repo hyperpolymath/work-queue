@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Work queue: plan after the MVP
+:toc: macro
+
+Status: agreed with the owner on 2026-11-25. The MVP tiers 0 to 3 are on
+main (PRs #1 to #7). This plan covers what comes next, in order. Each phase
+names the evidence that closes it; nothing is done until that evidence is
+recorded.
+
+toc::[]
+
+== Facts this plan starts from (2026-11-25)
+
+* None of the work-queue checks run in CI. TLC, conformance, mutants and the
+  `q` golden tests run only when someone runs them by hand.
+* The CI gate fails on main because `actions.lock` lists
+  `.github/workflows/ci-gate.yml` and `ci-gate-tamper-guard-caller.yml` with
+  no `uses:` entries, while #5 pinned both to
+  `hyperpolymath/proven-cicd-and-workflows@6a35e51`.
+* `scripts/lock-sync-fix.sh` cannot repair it: it reads the trailing pin
+  comment `# cicd-suite ci-gate` as a tag name, and no such tag exists. This
+  is template code, so the bug is in `rsr-template-repo`.
+* `estate-rules` fails in `tests/workflows/adopt_canon_lockstep_test.sh`
+  (untraced). The template is not instantiated, which keeps Canon lockstep,
+  openssf-compliance, the Central Estate audit and mint-gates red, and there
+  is no root `.pre-commit-config.yaml` for pre-commit.ci.
+* Proof scope: TLC checks finite models (three or four jobs). Conformance is
+  exhaustive only for those models.
+
+== Phases
+
+[cols="1,4,1,3",options="header"]
+|===
+|Phase |Work |Model |Closes when
+|A. Wire it
+|A CI workflow that runs `just wq-conformance` and `just wq-cli` on every PR
+and `just wq-mutants` and `just wq-launch-mutants` (tier 2's ten launch
+mutants) nightly, with TLC pinned by SHA-256 as now.
+|Sonnet
+|The work-queue checks run in CI and pass on a PR, with the run linked.
+|B. Green the gate
+|B1 lock entries for the two `proven-cicd` pins, by hand.
+B2 fix the comment-as-tag bug in `lock-sync-fix.sh` at source in
+`rsr-template-repo`, then adopt it here.
+B3 trace and fix the canon-lockstep test failure.
+B4 the `FINDINGS.adoc` sentence (done in the PR that adds this plan).
+Fold in Dependabot #8.
+|Sonnet
+|`scripts/check-lock-sync.sh` and estate-rules pass, and the CI gate reports
+a pass verdict on main.
+|C. Instantiate the template
+|`just repo-init` as is (owner decision), then review its output: deed,
+README, CLAUDE.md, placeholders, CODEOWNERS, MAINTAINERS, the mise preset, a
+root pre-commit config (an explicit step: `just repo-init` does not create
+it, so copy `ci/.pre-commit-config.yaml` to the root), and a ROADMAP for this repository that links here.
+|Sonnet
+|Canon lockstep, openssf-compliance, the Central Estate audit, mint-gates
+and pre-commit.ci pass.
+|D. Close evidence gaps
+|D1 tier 2's real memory-limit test, both ways (owner decision): a CI job on
+a GitHub runner (system-scope `systemd-run` with sudo, an experiment), and
+one run on a Linux host the owner names (user scope, as `q run` does it; not
+The-Titanic while it is memory-starved).
+D2 the board's refresh default against WCAG 2.2.1.
+D3 amend and revisions in the spec (FINDINGS open question).
+|Sonnet for D1; top tier for D3
+|Each item is either run, with output recorded, or decided by the owner.
+|E. Proof for any number of jobs
+|A TLAPS proof (owner decision) of the safety invariants for all sizes:
+state an inductive invariant, prove it is preserved by every action, and
+record the obligations and receipts. Liveness stays model-checked.
+|top tier
+|`tlapm` checks the proof with no omitted obligations, and the receipts are
+in `docs/status/PROOF-STATUS.adoc`.
+|F. Dogfood
+|Real estate jobs (proof runs, CI chores) through `q`, then the BoJ bridge
+and reconciliation with the earlier ChatGPT design.
+|later
+|A week of real use, with findings written up.
+|===
+
+== Order and handoff
+
+A, B and C run in one Sonnet session, as separate PRs in that order. D and E
+start once A is merged, so every later PR is checked in CI. E starts only
+after D3 lands, so the proof covers the amended spec; if D3 changes the spec
+later, it must recheck the proof. E is proof work and gets a top-tier session
+of its own.
+
+== Cross-project items raised by this plan
+
+* `rsr-template-repo`: the `lock-sync-fix.sh` comment-as-tag bug (B2). Every
+  repository minted from the template inherits it.
+* `hyperpolymath/standards`, PROOF-POLICY: TLA+ (TLC and TLAPS) is not in the
+  prover table. Phase E makes this more pressing.
