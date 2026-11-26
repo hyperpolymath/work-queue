@@ -35,7 +35,8 @@ toc::[]
 |Phase |Work |Model |Closes when
 |A. Wire it
 |A CI workflow that runs `just wq-conformance` and `just wq-cli` on every PR
-and `just wq-mutants` nightly, with TLC pinned by SHA-256 as now.
+and `just wq-mutants` and `just wq-launch-mutants` (tier 2's ten launch
+mutants) nightly, with TLC pinned by SHA-256 as now.
 |Sonnet
 |The work-queue checks run in CI and pass on a PR, with the run linked.
 |B. Green the gate
@@ -51,7 +52,8 @@ a pass verdict on main.
 |C. Instantiate the template
 |`just repo-init` as is (owner decision), then review its output: deed,
 README, CLAUDE.md, placeholders, CODEOWNERS, MAINTAINERS, the mise preset, a
-root pre-commit config, and a ROADMAP for this repository that links here.
+root pre-commit config (an explicit step: `just repo-init` does not create
+it, so copy `ci/.pre-commit-config.yaml` to the root), and a ROADMAP for this repository that links here.
 |Sonnet
 |Canon lockstep, openssf-compliance, the Central Estate audit, mint-gates
 and pre-commit.ci pass.
@@ -81,8 +83,10 @@ and reconciliation with the earlier ChatGPT design.
 == Order and handoff
 
 A, B and C run in one Sonnet session, as separate PRs in that order. D and E
-start once A is merged, so every later PR is checked in CI. E is proof work
-and gets a top-tier session of its own.
+start once A is merged, so every later PR is checked in CI. E starts only
+after D3 lands, so the proof covers the amended spec; if D3 changes the spec
+later, it must recheck the proof. E is proof work and gets a top-tier session
+of its own.
 
 == Cross-project items raised by this plan
 
